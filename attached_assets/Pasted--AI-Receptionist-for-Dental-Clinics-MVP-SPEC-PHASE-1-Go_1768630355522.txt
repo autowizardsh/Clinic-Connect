@@ -1,0 +1,176 @@
+🦷 AI Receptionist for Dental Clinics – MVP SPEC (PHASE-1)
+🎯 Goal
+
+Build a clinic-specific AI receptionist that can:
+
+Book appointments via chat
+
+Book appointments via phone call (voice)
+
+Sync with Google Calendar of specific doctor
+
+Support multiple doctors
+
+Provide a simple admin dashboard
+
+
+👥 User Roles
+
+Patient (chat / voice)
+
+Clinic Admin (dashboard)
+
+Doctor (view schedule only – optional)
+
+✅ MVP FEATURES
+1️⃣ Patient-Side Features
+💬 Website Chat Booking
+
+Book appointment
+
+Reschedule appointment
+
+Cancel appointment
+
+Ask basic FAQs (timings, address)
+
+Flow:
+
+Ask what they want
+
+Show them specialist doctor
+
+Show available slots
+
+Ask name & phone
+
+Confirm booking
+
+📞 Voice Booking (Inbound Calls)
+
+AI answers calls
+
+Speaks in English + Dutch
+
+Books / reschedules / cancels appointments
+
+Ask about service they want and suggest doctor based on that
+
+Sends confirmation after booking
+
+2️⃣ Clinic Admin Dashboard
+📅 Appointment Management
+
+View all appointments
+
+Create / edit / cancel appointments manually
+
+See booking source (chat / voice)
+
+👨‍⚕️ Doctor Management 
+
+Add multiple doctors
+
+Activate / deactivate doctor
+
+View doctor-wise appointments
+
+⏰ Clinic Settings
+
+Set working days & hours
+
+Set appointment duration (e.g. 30 mins)
+
+🔗 Google Calendar Integration
+
+Connect every doctor's Google Calendar
+
+Auto-sync bookings
+
+Prevent double booking
+
+3️⃣ Patient Data (Minimal)
+
+Store only:
+
+Name
+
+Phone number
+
+Appointment history
+
+Used for:
+
+Confirmations
+
+Reminders
+
+Follow-ups
+
+4️⃣ Automation Rules (MVP)
+
+If doctor becomes unavailable:
+
+Reassign appointment to other doctor (if free)
+
+Otherwise notify patient
+
+🛠️ TECH STACK (MVP)
+Core Backend (Brain)
+
+Next.js (API Routes)
+
+Database
+
+Supabase
+
+AI / LLM
+
+MVP: openai/gpt-oss-120b (open source)
+
+Production: OpenAI GPT-4.1 Mini
+
+Voice
+
+Twilio – incoming calls
+
+ElevenLabs – text-to-speech, use backend api for function calling
+
+Chat
+
+Website embedded chat widget (iframe or JS)
+
+Automation (Optional Helper)
+
+
+🚫 NOT INCLUDED IN MVP
+
+Payments
+
+Insurance handling
+
+Medical records
+
+Multi-clinic SaaS
+
+Billing & analytics
+
+
+📦 DELIVERABLES
+
+Chat booking
+
+Voice booking
+
+Admin dashboard
+
+Google Calendar sync
+
+Multi doctor support
+
+🏁 SUCCESS CRITERIA
+
+✔ Patient can book in under 1 minute
+✔ Clinic sees booking instantly
+✔ No double booking
+✔ Voice latency < acceptable
