@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { z } from "zod";
 import OpenAI from "openai";
 import { randomUUID } from "crypto";
+import bcrypt from "bcryptjs";
 
 // Use Replit AI Integrations for OpenAI
 const openai = new OpenAI({
@@ -81,15 +82,34 @@ export async function registerRoutes(
 
   app.post("/api/admin/doctors", requireAdmin, async (req, res) => {
     try {
-      const data = req.body;
-      // Generate a unique userId if not provided
-      if (!data.userId) {
-        data.userId = `doctor-${randomUUID()}`;
+      const { username, password, ...doctorData } = req.body;
+      
+      // Generate a unique userId
+      const userId = `doctor-${randomUUID()}`;
+      doctorData.userId = userId;
+      
+      // Create the doctor first
+      const doctor = await storage.createDoctor(doctorData);
+      
+      // If username and password provided, create admin user with doctor role
+      if (username && password) {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await storage.createAdminUser({
+          userId: userId,
+          username: username,
+          password: hashedPassword,
+          name: doctorData.name,
+          role: "doctor",
+          doctorId: doctor.id,
+        });
       }
-      const doctor = await storage.createDoctor(data);
+      
       res.json(doctor);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating doctor:", error);
+      if (error.code === "23505" && error.constraint?.includes("username")) {
+        return res.status(400).json({ error: "Username already exists" });
+      }
       res.status(500).json({ error: "Failed to create doctor" });
     }
   });
@@ -247,19 +267,28 @@ export async function registerRoutes(
 
   app.get("/api/doctor/profile", requireDoctor, async (req, res) => {
     try {
-      const user = req.user as any;
-      let doctor = await storage.getDoctorByUserId(user.id);
+      const session = (req as any).session;
+      const user = session?.user;
       
-      // If no doctor profile exists, try to find or create one
-      if (!doctor) {
+      // For admin users, show first doctor (admin can view any doctor)
+      if (user?.role === "admin") {
         const doctors = await storage.getDoctors();
-        // For demo purposes, return first doctor if exists
         if (doctors.length > 0) {
-          doctor = doctors[0];
-        } else {
-          return res.status(404).json({ error: "Doctor profile not found" });
+          return res.json(doctors[0]);
         }
+        return res.status(404).json({ error: "No doctors found" });
       }
+      
+      // For doctor users, find their specific profile
+      let doctor = await storage.getDoctorByUserId(user?.id);
+      if (!doctor && user?.doctorId) {
+        doctor = await storage.getDoctorById(user.doctorId);
+      }
+      
+      if (!doctor) {
+        return res.status(404).json({ error: "Doctor profile not found" });
+      }
+      
       res.json(doctor);
     } catch (error) {
       console.error("Error fetching doctor profile:", error);
@@ -269,21 +298,27 @@ export async function registerRoutes(
 
   app.get("/api/doctor/stats", requireDoctor, async (req, res) => {
     try {
-      const user = req.user as any;
-      let doctor = await storage.getDoctorByUserId(user.id);
+      const session = (req as any).session;
+      const user = session?.user;
+      
+      let doctor;
+      if (user?.role === "admin") {
+        const doctors = await storage.getDoctors();
+        doctor = doctors.length > 0 ? doctors[0] : null;
+      } else {
+        doctor = await storage.getDoctorByUserId(user?.id);
+        if (!doctor && user?.doctorId) {
+          doctor = await storage.getDoctorById(user.doctorId);
+        }
+      }
       
       if (!doctor) {
-        const doctors = await storage.getDoctors();
-        if (doctors.length > 0) {
-          doctor = doctors[0];
-        } else {
-          return res.json({
-            todayAppointments: 0,
-            weekAppointments: 0,
-            totalPatients: 0,
-            upcomingAppointments: [],
-          });
-        }
+        return res.json({
+          todayAppointments: 0,
+          weekAppointments: 0,
+          totalPatients: 0,
+          upcomingAppointments: [],
+        });
       }
       
       const stats = await storage.getDoctorStats(doctor.id);
@@ -296,16 +331,22 @@ export async function registerRoutes(
 
   app.get("/api/doctor/appointments", requireDoctor, async (req, res) => {
     try {
-      const user = req.user as any;
-      let doctor = await storage.getDoctorByUserId(user.id);
+      const session = (req as any).session;
+      const user = session?.user;
+      
+      let doctor;
+      if (user?.role === "admin") {
+        const doctors = await storage.getDoctors();
+        doctor = doctors.length > 0 ? doctors[0] : null;
+      } else {
+        doctor = await storage.getDoctorByUserId(user?.id);
+        if (!doctor && user?.doctorId) {
+          doctor = await storage.getDoctorById(user.doctorId);
+        }
+      }
       
       if (!doctor) {
-        const doctors = await storage.getDoctors();
-        if (doctors.length > 0) {
-          doctor = doctors[0];
-        } else {
-          return res.json([]);
-        }
+        return res.json([]);
       }
       
       const appointments = await storage.getAppointmentsByDoctorId(doctor.id);
@@ -333,16 +374,22 @@ export async function registerRoutes(
   // Doctor Availability
   app.get("/api/doctor/availability", requireDoctor, async (req, res) => {
     try {
-      const user = req.user as any;
-      let doctor = await storage.getDoctorByUserId(user.id);
+      const session = (req as any).session;
+      const user = session?.user;
+      
+      let doctor;
+      if (user?.role === "admin") {
+        const doctors = await storage.getDoctors();
+        doctor = doctors.length > 0 ? doctors[0] : null;
+      } else {
+        doctor = await storage.getDoctorByUserId(user?.id);
+        if (!doctor && user?.doctorId) {
+          doctor = await storage.getDoctorById(user.doctorId);
+        }
+      }
       
       if (!doctor) {
-        const doctors = await storage.getDoctors();
-        if (doctors.length > 0) {
-          doctor = doctors[0];
-        } else {
-          return res.json([]);
-        }
+        return res.json([]);
       }
       
       const availability = await storage.getDoctorAvailability(doctor.id);
@@ -355,16 +402,22 @@ export async function registerRoutes(
 
   app.post("/api/doctor/availability", requireDoctor, async (req, res) => {
     try {
-      const user = req.user as any;
-      let doctor = await storage.getDoctorByUserId(user.id);
+      const session = (req as any).session;
+      const user = session?.user;
+      
+      let doctor;
+      if (user?.role === "admin") {
+        const doctors = await storage.getDoctors();
+        doctor = doctors.length > 0 ? doctors[0] : null;
+      } else {
+        doctor = await storage.getDoctorByUserId(user?.id);
+        if (!doctor && user?.doctorId) {
+          doctor = await storage.getDoctorById(user.doctorId);
+        }
+      }
       
       if (!doctor) {
-        const doctors = await storage.getDoctors();
-        if (doctors.length > 0) {
-          doctor = doctors[0];
-        } else {
-          return res.status(404).json({ error: "Doctor not found" });
-        }
+        return res.status(404).json({ error: "Doctor not found" });
       }
       
       const availability = await storage.createDoctorAvailability({

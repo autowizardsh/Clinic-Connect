@@ -16,6 +16,11 @@ import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import type { Doctor, InsertDoctor } from "@shared/schema";
 
+interface DoctorFormData extends InsertDoctor {
+  username?: string;
+  password?: string;
+}
+
 export default function AdminDoctors() {
   const [isOpen, setIsOpen] = useState(false);
   const [editingDoctor, setEditingDoctor] = useState<Doctor | null>(null);
@@ -25,7 +30,7 @@ export default function AdminDoctors() {
     queryKey: ["/api/admin/doctors"],
   });
 
-  const form = useForm<InsertDoctor>({
+  const form = useForm<DoctorFormData>({
     defaultValues: {
       name: "",
       email: "",
@@ -34,19 +39,21 @@ export default function AdminDoctors() {
       bio: "",
       userId: "",
       isActive: true,
+      username: "",
+      password: "",
     },
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: InsertDoctor) => apiRequest("POST", "/api/admin/doctors", data),
+    mutationFn: (data: DoctorFormData) => apiRequest("POST", "/api/admin/doctors", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/doctors"] });
       toast({ title: "Doctor added successfully" });
       setIsOpen(false);
       form.reset();
     },
-    onError: () => {
-      toast({ title: "Failed to add doctor", variant: "destructive" });
+    onError: (error: any) => {
+      toast({ title: error.message || "Failed to add doctor", variant: "destructive" });
     },
   });
 
@@ -84,9 +91,10 @@ export default function AdminDoctors() {
     },
   });
 
-  const handleSubmit = (data: InsertDoctor) => {
+  const handleSubmit = (data: DoctorFormData) => {
     if (editingDoctor) {
-      updateMutation.mutate({ id: editingDoctor.id, data });
+      const { username, password, ...doctorData } = data;
+      updateMutation.mutate({ id: editingDoctor.id, data: doctorData });
     } else {
       createMutation.mutate(data);
     }
@@ -102,6 +110,8 @@ export default function AdminDoctors() {
       bio: doctor.bio || "",
       userId: doctor.userId,
       isActive: doctor.isActive,
+      username: "",
+      password: "",
     });
     setIsOpen(true);
   };
@@ -225,6 +235,40 @@ export default function AdminDoctors() {
                     </FormItem>
                   )}
                 />
+                
+                {!editingDoctor && (
+                  <div className="border-t pt-4 mt-4 space-y-4">
+                    <p className="text-sm font-medium text-muted-foreground">Login Credentials (Optional)</p>
+                    <p className="text-xs text-muted-foreground">Set up login credentials so this doctor can access their portal</p>
+                    <FormField
+                      control={form.control}
+                      name="username"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Username</FormLabel>
+                          <FormControl>
+                            <Input placeholder="doctor.smith" {...field} data-testid="input-doctor-username" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="password"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Password</FormLabel>
+                          <FormControl>
+                            <Input type="password" placeholder="Enter password" {...field} data-testid="input-doctor-password" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
+                
                 <div className="flex justify-end gap-2 pt-4">
                   <Button type="button" variant="outline" onClick={handleClose} data-testid="button-cancel">
                     Cancel
