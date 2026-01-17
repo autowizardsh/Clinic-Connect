@@ -535,23 +535,50 @@ export async function registerRoutes(
   });
 
   // OAuth callback - exchanges code for tokens and stores them
+  // This route requires authentication and validates that the state matches the session user's doctor
   app.get("/api/doctor/calendar/callback", async (req, res) => {
     try {
+      const session = (req as any).session;
+      const user = session?.user;
+      
+      // Require authentication
+      if (!user) {
+        return res.redirect('/login?error=session_expired');
+      }
+      
       const { code, state } = req.query;
       
       if (!code || !state) {
         return res.redirect('/doctor/calendar?error=missing_params');
       }
       
-      const doctorId = parseInt(state as string);
-      if (isNaN(doctorId)) {
+      const stateDoctorid = parseInt(state as string);
+      if (isNaN(stateDoctorid)) {
         return res.redirect('/doctor/calendar?error=invalid_state');
+      }
+      
+      // Get the doctor associated with the current session
+      const doctor = await getDoctorFromSession(req);
+      
+      if (!doctor) {
+        return res.redirect('/doctor/calendar?error=doctor_not_found');
+      }
+      
+      // Security: Verify that the state (doctorId) matches the logged-in user's doctor
+      // This prevents CSRF attacks where someone tries to bind their token to another doctor
+      if (doctor.id !== stateDoctorid) {
+        console.error(`OAuth state mismatch: state doctorId ${stateDoctorid} != session doctorId ${doctor.id}`);
+        return res.redirect('/doctor/calendar?error=security_violation');
       }
       
       const tokens = await exchangeCodeForTokens(code as string);
       
+      if (!tokens.refresh_token) {
+        return res.redirect('/doctor/calendar?error=no_refresh_token');
+      }
+      
       // Store the refresh token for this doctor
-      await storage.updateDoctor(doctorId, {
+      await storage.updateDoctor(doctor.id, {
         googleRefreshToken: tokens.refresh_token,
       });
       
