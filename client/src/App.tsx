@@ -123,13 +123,23 @@ function HomeRedirect() {
 }
 
 function Router() {
+  const [location] = useLocation();
+  
+  // Handle admin routes
+  if (location.startsWith("/admin")) {
+    return <AdminRoutes />;
+  }
+  
+  // Handle doctor routes
+  if (location.startsWith("/doctor")) {
+    return <DoctorRoutes />;
+  }
+  
   return (
     <Switch>
       <Route path="/" component={HomeRedirect} />
       <Route path="/login" component={LoginPage} />
       <Route path="/chat" component={ChatPage} />
-      <Route path="/admin/:rest*" component={AdminRoutes} />
-      <Route path="/doctor/:rest*" component={DoctorRoutes} />
       <Route component={NotFound} />
     </Switch>
   );
