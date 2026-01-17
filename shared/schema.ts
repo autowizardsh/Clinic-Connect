@@ -158,11 +158,14 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 
 // ============================================
-// ADMIN USERS (role-based)
+// ADMIN USERS (role-based with username/password)
 // ============================================
 export const adminUsers = pgTable("admin_users", {
   id: serial("id").primaryKey(),
-  userId: varchar("user_id").notNull().unique(), // Links to Replit Auth user
+  userId: varchar("user_id").notNull().unique(),
+  username: varchar("username", { length: 50 }).notNull().unique(),
+  password: text("password").notNull(), // Hashed password
+  name: text("name"),
   role: text("role").notNull().default("admin"), // admin, doctor
   doctorId: integer("doctor_id").references(() => doctors.id), // Only for doctor role
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),

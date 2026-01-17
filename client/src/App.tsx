@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
+import LoginPage from "@/pages/login";
 import ChatPage from "@/pages/chat";
 
 import { AdminLayout } from "@/components/admin-layout";
@@ -46,7 +47,7 @@ function ProtectedRoute({
   }
 
   if (!isAuthenticated) {
-    return <Redirect to="/" />;
+    return <Redirect to="/login" />;
   }
 
   // Check role if specified
@@ -125,6 +126,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={HomeRedirect} />
+      <Route path="/login" component={LoginPage} />
       <Route path="/chat" component={ChatPage} />
       <Route path="/admin/:rest*" component={AdminRoutes} />
       <Route path="/doctor/:rest*" component={DoctorRoutes} />

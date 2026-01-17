@@ -1,8 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { User } from "@shared/models/auth";
+import { apiRequest } from "@/lib/queryClient";
 
-interface AuthUser extends User {
-  role?: "admin" | "doctor";
+interface AuthUser {
+  id: string;
+  username: string;
+  name?: string;
+  role: "admin" | "doctor";
+  doctorId?: number | null;
 }
 
 async function fetchUser(): Promise<AuthUser | null> {
@@ -21,10 +25,6 @@ async function fetchUser(): Promise<AuthUser | null> {
   return response.json();
 }
 
-async function logout(): Promise<void> {
-  window.location.href = "/api/logout";
-}
-
 export function useAuth() {
   const queryClient = useQueryClient();
   const { data: user, isLoading } = useQuery<AuthUser | null>({
@@ -35,13 +35,15 @@ export function useAuth() {
   });
 
   const logoutMutation = useMutation({
-    mutationFn: logout,
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/auth/logout");
+    },
     onSuccess: () => {
       queryClient.setQueryData(["/api/auth/user"], null);
+      window.location.href = "/login";
     },
   });
 
-  // Role is now explicitly returned from the server
   const role = user?.role || null;
 
   return {

@@ -11,66 +11,41 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-// Auth middleware - ensures user is authenticated
+// Auth middleware - ensures user is authenticated via session
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.isAuthenticated() || !req.user) {
+  const session = (req as any).session;
+  if (!session?.user) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   next();
 }
 
 // Admin-only middleware - checks if user is admin (not doctor-only)
-async function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!req.isAuthenticated() || !req.user) {
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const session = (req as any).session;
+  if (!session?.user) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   
-  const user = req.user as any;
-  
-  try {
-    const adminUser = await storage.getAdminUser(user.id);
-    
-    // Must have explicit admin role
-    if (!adminUser) {
-      return res.status(403).json({ error: "Access denied. No role assigned." });
-    }
-    
-    if (adminUser.role !== "admin") {
-      return res.status(403).json({ error: "Access denied. Admin privileges required." });
-    }
-    
-    next();
-  } catch (error) {
-    console.error("Error checking admin role:", error);
-    return res.status(500).json({ error: "Failed to verify permissions" });
+  if (session.user.role !== "admin") {
+    return res.status(403).json({ error: "Access denied. Admin privileges required." });
   }
+  
+  next();
 }
 
 // Doctor-only middleware - for doctor-specific routes
-async function requireDoctor(req: Request, res: Response, next: NextFunction) {
-  if (!req.isAuthenticated() || !req.user) {
+function requireDoctor(req: Request, res: Response, next: NextFunction) {
+  const session = (req as any).session;
+  if (!session?.user) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   
-  const user = req.user as any;
-  
-  try {
-    const adminUser = await storage.getAdminUser(user.id);
-    
-    // Must have a role assigned
-    if (!adminUser) {
-      return res.status(403).json({ error: "Access denied. No role assigned." });
-    }
-    
-    // Allow if user is admin OR doctor
-    if (adminUser.role === "admin" || adminUser.role === "doctor") {
-      next();
-    } else {
-      return res.status(403).json({ error: "Access denied" });
-    }
-  } catch (error) {
-    console.error("Error checking doctor role:", error);
-    return res.status(500).json({ error: "Failed to verify permissions" });
+  // Allow if user is admin OR doctor
+  if (session.user.role === "admin" || session.user.role === "doctor") {
+    next();
+  } else {
+    return res.status(403).json({ error: "Access denied" });
   }
 }
 

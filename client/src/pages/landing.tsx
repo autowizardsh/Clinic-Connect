@@ -23,7 +23,7 @@ export default function LandingPage() {
             <div className="flex items-center gap-3">
               <ThemeToggle />
               <Button asChild data-testid="button-login">
-                <a href="/api/login">Sign In</a>
+                <a href="/login">Sign In</a>
               </Button>
             </div>
           </div>
@@ -51,7 +51,7 @@ export default function LandingPage() {
               </div>
               <div className="flex flex-col sm:flex-row gap-4">
                 <Button size="lg" asChild data-testid="button-get-started">
-                  <a href="/api/login">Get Started Free</a>
+                  <a href="/login">Get Started Free</a>
                 </Button>
                 <Button size="lg" variant="outline" asChild data-testid="button-demo">
                   <a href="#features">Learn More</a>
@@ -224,7 +224,7 @@ export default function LandingPage() {
             Join clinics that save hours every week with AI-powered appointment booking.
           </p>
           <Button size="lg" variant="secondary" asChild data-testid="button-cta-signup">
-            <a href="/api/login">Start Free Trial</a>
+            <a href="/login">Start Free Trial</a>
           </Button>
         </div>
       </section>
