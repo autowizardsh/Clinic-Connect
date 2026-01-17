@@ -1,58 +1,88 @@
-// Google Calendar Integration via Replit Connectors
+// Google Calendar Integration - Per-Doctor OAuth
 import { google } from 'googleapis';
 
-let connectionSettings: any;
+// OAuth 2.0 Client configuration
+// These should be set from Google Cloud Console OAuth credentials
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const REDIRECT_URI = process.env.REPLIT_DEV_DOMAIN 
+  ? `https://${process.env.REPLIT_DEV_DOMAIN}/api/doctor/calendar/callback`
+  : process.env.REPLIT_DEPLOYMENT_URL
+    ? `${process.env.REPLIT_DEPLOYMENT_URL}/api/doctor/calendar/callback`
+    : 'http://localhost:5000/api/doctor/calendar/callback';
 
-async function getAccessToken() {
-  if (connectionSettings && connectionSettings.settings.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
-    return connectionSettings.settings.access_token;
-  }
-  
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY 
-    ? 'repl ' + process.env.REPL_IDENTITY 
-    : process.env.WEB_REPL_RENEWAL 
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
-    : null;
-
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
-  }
-
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=google-calendar',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
-      }
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
-
-  const accessToken = connectionSettings?.settings?.access_token || connectionSettings.settings?.oauth?.credentials?.access_token;
-
-  if (!connectionSettings || !accessToken) {
-    throw new Error('Google Calendar not connected');
-  }
-  return accessToken;
+// Check if OAuth is configured
+export function isOAuthConfigured(): boolean {
+  return !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET);
 }
 
-// WARNING: Never cache this client.
-// Access tokens expire, so a new client must be created each time.
-// Always call this function again to get a fresh client.
-export async function getGoogleCalendarClient() {
-  const accessToken = await getAccessToken();
+// Create OAuth2 client
+function createOAuth2Client() {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    throw new Error('Google OAuth credentials not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.');
+  }
+  return new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, REDIRECT_URI);
+}
 
-  const oauth2Client = new google.auth.OAuth2();
-  oauth2Client.setCredentials({
-    access_token: accessToken
+// Generate OAuth URL for a doctor to connect their calendar
+export function getAuthUrl(doctorId: number): string {
+  const oauth2Client = createOAuth2Client();
+  
+  const scopes = [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/calendar.events',
+  ];
+
+  return oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: scopes,
+    prompt: 'consent', // Force consent screen to get refresh token
+    state: String(doctorId), // Pass doctor ID in state
   });
+}
 
+// Exchange authorization code for tokens
+export async function exchangeCodeForTokens(code: string): Promise<{
+  access_token: string;
+  refresh_token: string;
+  expiry_date: number;
+}> {
+  const oauth2Client = createOAuth2Client();
+  const { tokens } = await oauth2Client.getToken(code);
+  
+  if (!tokens.refresh_token) {
+    throw new Error('No refresh token received. Please revoke access and try again.');
+  }
+  
+  return {
+    access_token: tokens.access_token || '',
+    refresh_token: tokens.refresh_token,
+    expiry_date: tokens.expiry_date || Date.now() + 3600000,
+  };
+}
+
+// Get a calendar client for a specific doctor using their refresh token
+export async function getCalendarClientForDoctor(refreshToken: string) {
+  const oauth2Client = createOAuth2Client();
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
+  
+  // Refresh the access token
+  const { credentials } = await oauth2Client.refreshAccessToken();
+  oauth2Client.setCredentials(credentials);
+  
   return google.calendar({ version: 'v3', auth: oauth2Client });
 }
 
-// Create a calendar event for an appointment
+// Revoke access for a doctor
+export async function revokeAccess(refreshToken: string): Promise<void> {
+  const oauth2Client = createOAuth2Client();
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
+  await oauth2Client.revokeCredentials();
+}
+
+// Create a calendar event for an appointment (using doctor's token)
 export async function createCalendarEvent(
+  refreshToken: string,
   calendarId: string,
   appointment: {
     patientName: string;
@@ -65,10 +95,10 @@ export async function createCalendarEvent(
   },
   timezone: string = 'Europe/Amsterdam'
 ) {
-  const calendar = await getGoogleCalendarClient();
+  const calendar = await getCalendarClientForDoctor(refreshToken);
   
   // Parse date and time - date is expected as YYYY-MM-DD, time as HH:MM
-  const dateStr = appointment.date.split('T')[0]; // Handle both date string and ISO datetime
+  const dateStr = appointment.date.split('T')[0];
   const timeStr = appointment.time;
   
   // Create datetime string in the clinic's timezone
@@ -104,13 +134,14 @@ export async function createCalendarEvent(
   return response.data;
 }
 
-// Get calendar events for a specific date range
+// Get calendar events (using doctor's token)
 export async function getCalendarEvents(
+  refreshToken: string,
   calendarId: string,
   timeMin: Date,
   timeMax: Date
 ) {
-  const calendar = await getGoogleCalendarClient();
+  const calendar = await getCalendarClientForDoctor(refreshToken);
 
   const response = await calendar.events.list({
     calendarId: calendarId || 'primary',
@@ -123,82 +154,24 @@ export async function getCalendarEvents(
   return response.data.items || [];
 }
 
-// Delete a calendar event
-export async function deleteCalendarEvent(calendarId: string, eventId: string) {
-  const calendar = await getGoogleCalendarClient();
+// List available calendars (using doctor's token)
+export async function listCalendars(refreshToken: string) {
+  const calendar = await getCalendarClientForDoctor(refreshToken);
+
+  const response = await calendar.calendarList.list();
+  return response.data.items || [];
+}
+
+// Delete a calendar event (using doctor's token)
+export async function deleteCalendarEvent(
+  refreshToken: string,
+  calendarId: string,
+  eventId: string
+) {
+  const calendar = await getCalendarClientForDoctor(refreshToken);
 
   await calendar.events.delete({
     calendarId: calendarId || 'primary',
     eventId: eventId,
   });
-}
-
-// Update a calendar event
-export async function updateCalendarEvent(
-  calendarId: string,
-  eventId: string,
-  updates: {
-    date?: string;
-    time?: string;
-    patientName?: string;
-    service?: string;
-    notes?: string;
-  }
-) {
-  const calendar = await getGoogleCalendarClient();
-
-  // Get existing event first
-  const existing = await calendar.events.get({
-    calendarId: calendarId || 'primary',
-    eventId: eventId,
-  });
-
-  const event = existing.data;
-
-  // Update fields if provided
-  if (updates.date || updates.time) {
-    const currentStart = new Date(event.start?.dateTime || new Date());
-    
-    if (updates.date) {
-      const [year, month, day] = updates.date.split('-').map(Number);
-      currentStart.setFullYear(year, month - 1, day);
-    }
-    
-    if (updates.time) {
-      const [hours, minutes] = updates.time.split(':').map(Number);
-      currentStart.setHours(hours, minutes, 0, 0);
-    }
-    
-    const endDate = new Date(currentStart);
-    endDate.setMinutes(endDate.getMinutes() + 30);
-    
-    event.start = {
-      dateTime: currentStart.toISOString(),
-      timeZone: 'UTC',
-    };
-    event.end = {
-      dateTime: endDate.toISOString(),
-      timeZone: 'UTC',
-    };
-  }
-
-  if (updates.patientName) {
-    event.summary = `Dental Appointment: ${updates.patientName}`;
-  }
-
-  const response = await calendar.events.update({
-    calendarId: calendarId || 'primary',
-    eventId: eventId,
-    requestBody: event,
-  });
-
-  return response.data;
-}
-
-// List available calendars
-export async function listCalendars() {
-  const calendar = await getGoogleCalendarClient();
-
-  const response = await calendar.calendarList.list();
-  return response.data.items || [];
 }

@@ -7,7 +7,10 @@ import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { 
-  getGoogleCalendarClient, 
+  isOAuthConfigured,
+  getAuthUrl,
+  exchangeCodeForTokens,
+  revokeAccess,
   createCalendarEvent, 
   getCalendarEvents, 
   deleteCalendarEvent,
@@ -468,20 +471,137 @@ export async function registerRoutes(
     }
   });
 
-  // Google Calendar Integration
+  // Helper to get current doctor from session
+  async function getDoctorFromSession(req: Request) {
+    const session = (req as any).session;
+    const user = session?.user;
+    
+    if (user?.role === "admin") {
+      const doctors = await storage.getDoctors();
+      return doctors.length > 0 ? doctors[0] : null;
+    } else {
+      let doctor = await storage.getDoctorByUserId(user?.id);
+      if (!doctor && user?.doctorId) {
+        doctor = await storage.getDoctorById(user.doctorId);
+      }
+      return doctor;
+    }
+  }
+
+  // Google Calendar Integration - Per-Doctor OAuth
   app.get("/api/doctor/calendar/status", requireDoctor, async (req, res) => {
     try {
-      // Try to get the calendar client to check if connected
-      await getGoogleCalendarClient();
-      res.json({ connected: true });
+      const doctor = await getDoctorFromSession(req);
+      
+      if (!doctor) {
+        return res.json({ connected: false, configured: isOAuthConfigured(), message: "Doctor not found" });
+      }
+      
+      // Check if this specific doctor has connected their calendar
+      const hasRefreshToken = !!doctor.googleRefreshToken;
+      
+      res.json({ 
+        connected: hasRefreshToken,
+        configured: isOAuthConfigured(),
+        calendarId: doctor.googleCalendarId,
+        message: hasRefreshToken ? "Connected" : "Not connected"
+      });
     } catch (error) {
-      res.json({ connected: false, message: "Google Calendar not connected" });
+      res.json({ connected: false, configured: isOAuthConfigured(), message: "Error checking status" });
+    }
+  });
+
+  // Start OAuth flow - redirects doctor to Google consent screen
+  app.get("/api/doctor/calendar/connect", requireDoctor, async (req, res) => {
+    try {
+      const doctor = await getDoctorFromSession(req);
+      
+      if (!doctor) {
+        return res.status(404).json({ error: "Doctor not found" });
+      }
+      
+      if (!isOAuthConfigured()) {
+        return res.status(400).json({ 
+          error: "Google OAuth not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET." 
+        });
+      }
+      
+      const authUrl = getAuthUrl(doctor.id);
+      res.json({ authUrl });
+    } catch (error) {
+      console.error("Error generating auth URL:", error);
+      res.status(500).json({ error: "Failed to start OAuth flow" });
+    }
+  });
+
+  // OAuth callback - exchanges code for tokens and stores them
+  app.get("/api/doctor/calendar/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+      
+      if (!code || !state) {
+        return res.redirect('/doctor/calendar?error=missing_params');
+      }
+      
+      const doctorId = parseInt(state as string);
+      if (isNaN(doctorId)) {
+        return res.redirect('/doctor/calendar?error=invalid_state');
+      }
+      
+      const tokens = await exchangeCodeForTokens(code as string);
+      
+      // Store the refresh token for this doctor
+      await storage.updateDoctor(doctorId, {
+        googleRefreshToken: tokens.refresh_token,
+      });
+      
+      res.redirect('/doctor/calendar?connected=true');
+    } catch (error) {
+      console.error("OAuth callback error:", error);
+      res.redirect('/doctor/calendar?error=oauth_failed');
+    }
+  });
+
+  // Disconnect calendar - revokes access and clears token
+  app.post("/api/doctor/calendar/disconnect", requireDoctor, async (req, res) => {
+    try {
+      const doctor = await getDoctorFromSession(req);
+      
+      if (!doctor) {
+        return res.status(404).json({ error: "Doctor not found" });
+      }
+      
+      if (doctor.googleRefreshToken) {
+        try {
+          await revokeAccess(doctor.googleRefreshToken);
+        } catch (e) {
+          // Ignore revoke errors, continue to clear token
+          console.log("Token revoke failed (may already be revoked):", e);
+        }
+      }
+      
+      // Clear tokens from database
+      await storage.updateDoctor(doctor.id, {
+        googleRefreshToken: null,
+        googleCalendarId: null,
+      });
+      
+      res.json({ success: true, message: "Calendar disconnected" });
+    } catch (error) {
+      console.error("Error disconnecting calendar:", error);
+      res.status(500).json({ error: "Failed to disconnect calendar" });
     }
   });
 
   app.get("/api/doctor/calendar/calendars", requireDoctor, async (req, res) => {
     try {
-      const calendars = await listCalendars();
+      const doctor = await getDoctorFromSession(req);
+      
+      if (!doctor?.googleRefreshToken) {
+        return res.status(400).json({ error: "Calendar not connected" });
+      }
+      
+      const calendars = await listCalendars(doctor.googleRefreshToken);
       res.json(calendars);
     } catch (error) {
       console.error("Error listing calendars:", error);
@@ -491,12 +611,19 @@ export async function registerRoutes(
 
   app.get("/api/doctor/calendar/events", requireDoctor, async (req, res) => {
     try {
-      const { calendarId = "primary", startDate, endDate } = req.query;
+      const doctor = await getDoctorFromSession(req);
+      
+      if (!doctor?.googleRefreshToken) {
+        return res.status(400).json({ error: "Calendar not connected" });
+      }
+      
+      const { calendarId, startDate, endDate } = req.query;
+      const calId = (calendarId as string) || doctor.googleCalendarId || "primary";
       
       const timeMin = startDate ? new Date(startDate as string) : new Date();
       const timeMax = endDate ? new Date(endDate as string) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       
-      const events = await getCalendarEvents(calendarId as string, timeMin, timeMax);
+      const events = await getCalendarEvents(doctor.googleRefreshToken, calId, timeMin, timeMax);
       res.json(events);
     } catch (error) {
       console.error("Error fetching calendar events:", error);
@@ -506,22 +633,14 @@ export async function registerRoutes(
 
   app.post("/api/doctor/calendar/sync", requireDoctor, async (req, res) => {
     try {
-      const session = (req as any).session;
-      const user = session?.user;
-      
-      let doctor;
-      if (user?.role === "admin") {
-        const doctors = await storage.getDoctors();
-        doctor = doctors.length > 0 ? doctors[0] : null;
-      } else {
-        doctor = await storage.getDoctorByUserId(user?.id);
-        if (!doctor && user?.doctorId) {
-          doctor = await storage.getDoctorById(user.doctorId);
-        }
-      }
+      const doctor = await getDoctorFromSession(req);
       
       if (!doctor) {
         return res.status(404).json({ error: "Doctor not found" });
+      }
+      
+      if (!doctor.googleRefreshToken) {
+        return res.status(400).json({ error: "Calendar not connected. Please connect your Google Calendar first." });
       }
 
       // Get doctor's appointments and clinic settings for timezone
@@ -551,7 +670,7 @@ export async function registerRoutes(
             const dateStr = appointmentDate.toISOString().split('T')[0];
             const timeStr = `${String(appointmentDate.getHours()).padStart(2, '0')}:${String(appointmentDate.getMinutes()).padStart(2, '0')}`;
             
-            const event = await createCalendarEvent(calendarId, {
+            const event = await createCalendarEvent(doctor.googleRefreshToken, calendarId, {
               patientName: patient?.name || "Unknown Patient",
               doctorName: doctor.name,
               date: dateStr,
@@ -585,10 +704,16 @@ export async function registerRoutes(
 
   app.delete("/api/doctor/calendar/event/:eventId", requireDoctor, async (req, res) => {
     try {
-      const { eventId } = req.params;
-      const { calendarId = "primary" } = req.query;
+      const doctor = await getDoctorFromSession(req);
       
-      await deleteCalendarEvent(calendarId as string, eventId);
+      if (!doctor?.googleRefreshToken) {
+        return res.status(400).json({ error: "Calendar not connected" });
+      }
+      
+      const { eventId } = req.params;
+      const calendarId = (req.query.calendarId as string) || doctor.googleCalendarId || "primary";
+      
+      await deleteCalendarEvent(doctor.googleRefreshToken, calendarId, eventId);
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting calendar event:", error);

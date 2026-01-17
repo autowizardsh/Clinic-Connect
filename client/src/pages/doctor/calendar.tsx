@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, CalendarCheck, RefreshCw, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Calendar, CalendarCheck, RefreshCw, Loader2, CheckCircle2, XCircle, Link2, Unlink } from "lucide-react";
 import { SiGoogle } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -15,18 +16,88 @@ interface CalendarEvent {
   end?: { dateTime?: string; date?: string };
 }
 
+interface CalendarStatus {
+  connected: boolean;
+  configured: boolean;
+  calendarId?: string;
+  message?: string;
+}
+
 export default function DoctorCalendarPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedCalendar] = useState("primary");
+  const [location] = useLocation();
 
-  const { data: status, isLoading: statusLoading } = useQuery<{ connected: boolean; message?: string }>({
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("connected") === "true") {
+      toast({
+        title: "Calendar Connected",
+        description: "Your Google Calendar has been successfully connected!",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/doctor/calendar/status"] });
+      window.history.replaceState({}, "", "/doctor/calendar");
+    } else if (params.get("error")) {
+      toast({
+        title: "Connection Failed",
+        description: "Failed to connect Google Calendar. Please try again.",
+        variant: "destructive",
+      });
+      window.history.replaceState({}, "", "/doctor/calendar");
+    }
+  }, [location, toast, queryClient]);
+
+  const { data: status, isLoading: statusLoading } = useQuery<CalendarStatus>({
     queryKey: ["/api/doctor/calendar/status"],
   });
 
   const { data: events, isLoading: eventsLoading } = useQuery<CalendarEvent[]>({
     queryKey: ["/api/doctor/calendar/events"],
     enabled: status?.connected === true,
+  });
+
+  const connectMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/doctor/calendar/connect");
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Connection Failed",
+        description: error.message || "Failed to start connection process",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/doctor/calendar/disconnect");
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Calendar Disconnected",
+        description: "Your Google Calendar has been disconnected",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/doctor/calendar/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/doctor/calendar/events"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Disconnect Failed",
+        description: error.message || "Failed to disconnect calendar",
+        variant: "destructive",
+      });
+    },
   });
 
   const syncMutation = useMutation({
@@ -77,7 +148,7 @@ export default function DoctorCalendarPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Google Calendar</h1>
-        <p className="text-muted-foreground">Sync your appointments with Google Calendar</p>
+        <p className="text-muted-foreground">Connect your personal Google Calendar to sync appointments</p>
       </div>
 
       <Card>
@@ -87,7 +158,7 @@ export default function DoctorCalendarPage() {
             Google Calendar Integration
           </CardTitle>
           <CardDescription>
-            Connect your Google Calendar to automatically sync appointments
+            Connect your Google Calendar to automatically sync your appointments
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -109,32 +180,77 @@ export default function DoctorCalendarPage() {
                   <div>
                     <p className="font-medium">Not Connected</p>
                     <p className="text-sm text-muted-foreground">
-                      {status?.message || "Google Calendar is not connected"}
+                      Connect your Google Calendar to sync appointments
                     </p>
                   </div>
                 </>
               )}
             </div>
-            {status?.connected && (
-              <Button
-                onClick={() => syncMutation.mutate()}
-                disabled={syncMutation.isPending}
-                data-testid="button-sync-calendar"
-              >
-                {syncMutation.isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Syncing...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Sync Now
-                  </>
-                )}
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {status?.connected ? (
+                <>
+                  <Button
+                    onClick={() => syncMutation.mutate()}
+                    disabled={syncMutation.isPending}
+                    data-testid="button-sync-calendar"
+                  >
+                    {syncMutation.isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Syncing...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Sync Now
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => disconnectMutation.mutate()}
+                    disabled={disconnectMutation.isPending}
+                    data-testid="button-disconnect-calendar"
+                  >
+                    {disconnectMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Unlink className="mr-2 h-4 w-4" />
+                    )}
+                    Disconnect
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  onClick={() => connectMutation.mutate()}
+                  disabled={connectMutation.isPending || !status?.configured}
+                  data-testid="button-connect-calendar"
+                >
+                  {connectMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Connecting...
+                    </>
+                  ) : (
+                    <>
+                      <Link2 className="mr-2 h-4 w-4" />
+                      Connect Google Calendar
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
+
+          {!status?.configured && !status?.connected && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">Setup Required</p>
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                Google Calendar integration requires setup. Please ask your administrator to configure 
+                GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET from Google Cloud Console.
+              </p>
+            </div>
+          )}
 
           {status?.connected && (
             <>
@@ -179,18 +295,18 @@ export default function DoctorCalendarPage() {
                 <div className="flex items-start gap-3 p-3 border rounded-lg">
                   <Calendar className="h-5 w-5 text-primary mt-0.5" />
                   <div>
-                    <p className="font-medium text-sm">Automatic Sync</p>
+                    <p className="font-medium text-sm">Your Personal Calendar</p>
                     <p className="text-sm text-muted-foreground">
-                      Click "Sync Now" to push appointments to your calendar
+                      Appointments sync to your own Google Calendar
                     </p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 p-3 border rounded-lg">
                   <RefreshCw className="h-5 w-5 text-primary mt-0.5" />
                   <div>
-                    <p className="font-medium text-sm">Real-time Updates</p>
+                    <p className="font-medium text-sm">One-Click Sync</p>
                     <p className="text-sm text-muted-foreground">
-                      New bookings can be synced instantly
+                      Click "Sync Now" to push new appointments
                     </p>
                   </div>
                 </div>
@@ -198,13 +314,15 @@ export default function DoctorCalendarPage() {
             </>
           )}
 
-          {!status?.connected && (
+          {!status?.connected && status?.configured && (
             <div className="p-4 bg-muted/50 rounded-lg">
               <p className="text-sm font-medium mb-2">How to Connect</p>
-              <p className="text-sm text-muted-foreground">
-                The Google Calendar connection needs to be set up through the Replit integrations panel.
-                Once connected, you'll be able to sync your appointments directly to your calendar.
-              </p>
+              <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+                <li>Click the "Connect Google Calendar" button above</li>
+                <li>Sign in with your Google account</li>
+                <li>Grant permission to access your calendar</li>
+                <li>You'll be redirected back here once connected</li>
+              </ol>
             </div>
           )}
         </CardContent>
