@@ -116,10 +116,12 @@ export default function AdminDoctors() {
     setIsOpen(true);
   };
 
-  const handleClose = () => {
-    setIsOpen(false);
-    setEditingDoctor(null);
-    form.reset();
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open);
+    if (!open) {
+      setEditingDoctor(null);
+      form.reset();
+    }
   };
 
   if (isLoading) {
@@ -154,7 +156,7 @@ export default function AdminDoctors() {
           <h1 className="text-2xl font-bold">Doctors</h1>
           <p className="text-muted-foreground">Manage your clinic's doctors</p>
         </div>
-        <Dialog open={isOpen} onOpenChange={handleClose}>
+        <Dialog open={isOpen} onOpenChange={handleOpenChange}>
           <DialogTrigger asChild>
             <Button onClick={() => setIsOpen(true)} data-testid="button-add-doctor">
               <Plus className="h-4 w-4 mr-2" />
@@ -270,7 +272,7 @@ export default function AdminDoctors() {
                 )}
                 
                 <div className="flex justify-end gap-2 pt-4">
-                  <Button type="button" variant="outline" onClick={handleClose} data-testid="button-cancel">
+                  <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} data-testid="button-cancel">
                     Cancel
                   </Button>
                   <Button 
