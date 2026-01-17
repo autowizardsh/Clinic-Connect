@@ -5,6 +5,7 @@ import { z } from "zod";
 import OpenAI from "openai";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
+import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 
 // Use Replit AI Integrations for OpenAI
 const openai = new OpenAI({
@@ -54,6 +55,10 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Setup session middleware and auth routes
+  await setupAuth(app);
+  registerAuthRoutes(app);
+
   // ========================================
   // ADMIN ROUTES
   // ========================================
