@@ -6,6 +6,13 @@ import OpenAI from "openai";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import { 
+  getGoogleCalendarClient, 
+  createCalendarEvent, 
+  getCalendarEvents, 
+  deleteCalendarEvent,
+  listCalendars 
+} from "./google-calendar";
 
 // Use Replit AI Integrations for OpenAI
 const openai = new OpenAI({
@@ -461,27 +468,132 @@ export async function registerRoutes(
     }
   });
 
-  // Google Calendar (MVP placeholder - feature coming soon)
-  app.post("/api/doctor/calendar/connect", requireDoctor, async (req, res) => {
-    // Google Calendar integration is planned for post-MVP release
-    res.status(501).json({ 
-      error: "Coming soon",
-      message: "Google Calendar integration is planned for the next release." 
-    });
+  // Google Calendar Integration
+  app.get("/api/doctor/calendar/status", requireDoctor, async (req, res) => {
+    try {
+      // Try to get the calendar client to check if connected
+      await getGoogleCalendarClient();
+      res.json({ connected: true });
+    } catch (error) {
+      res.json({ connected: false, message: "Google Calendar not connected" });
+    }
   });
 
-  app.post("/api/doctor/calendar/disconnect", requireDoctor, async (req, res) => {
-    res.status(501).json({ 
-      error: "Coming soon",
-      message: "Google Calendar integration is planned for the next release." 
-    });
+  app.get("/api/doctor/calendar/calendars", requireDoctor, async (req, res) => {
+    try {
+      const calendars = await listCalendars();
+      res.json(calendars);
+    } catch (error) {
+      console.error("Error listing calendars:", error);
+      res.status(500).json({ error: "Failed to list calendars" });
+    }
+  });
+
+  app.get("/api/doctor/calendar/events", requireDoctor, async (req, res) => {
+    try {
+      const { calendarId = "primary", startDate, endDate } = req.query;
+      
+      const timeMin = startDate ? new Date(startDate as string) : new Date();
+      const timeMax = endDate ? new Date(endDate as string) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      
+      const events = await getCalendarEvents(calendarId as string, timeMin, timeMax);
+      res.json(events);
+    } catch (error) {
+      console.error("Error fetching calendar events:", error);
+      res.status(500).json({ error: "Failed to fetch calendar events" });
+    }
   });
 
   app.post("/api/doctor/calendar/sync", requireDoctor, async (req, res) => {
-    res.status(501).json({ 
-      error: "Coming soon",
-      message: "Google Calendar integration is planned for the next release." 
-    });
+    try {
+      const session = (req as any).session;
+      const user = session?.user;
+      
+      let doctor;
+      if (user?.role === "admin") {
+        const doctors = await storage.getDoctors();
+        doctor = doctors.length > 0 ? doctors[0] : null;
+      } else {
+        doctor = await storage.getDoctorByUserId(user?.id);
+        if (!doctor && user?.doctorId) {
+          doctor = await storage.getDoctorById(user.doctorId);
+        }
+      }
+      
+      if (!doctor) {
+        return res.status(404).json({ error: "Doctor not found" });
+      }
+
+      // Get doctor's appointments and clinic settings for timezone
+      const [appointments, settings] = await Promise.all([
+        storage.getAppointmentsByDoctorId(doctor.id),
+        storage.getClinicSettings(),
+      ]);
+      
+      // Use doctor's calendar or provided calendar ID
+      const calendarId = req.body.calendarId || doctor.googleCalendarId || "primary";
+      const timezone = settings?.timezone || "Europe/Amsterdam";
+      
+      // Optionally save the calendar selection to the doctor profile
+      if (req.body.calendarId && req.body.calendarId !== doctor.googleCalendarId) {
+        await storage.updateDoctor(doctor.id, { googleCalendarId: req.body.calendarId });
+      }
+      
+      let syncedCount = 0;
+      for (const appointment of appointments) {
+        if (appointment.status === "scheduled" && !appointment.googleEventId) {
+          try {
+            // Get patient info
+            const patient = await storage.getPatientById(appointment.patientId);
+            
+            // Format date from timestamp to YYYY-MM-DD
+            const appointmentDate = new Date(appointment.date);
+            const dateStr = appointmentDate.toISOString().split('T')[0];
+            const timeStr = `${String(appointmentDate.getHours()).padStart(2, '0')}:${String(appointmentDate.getMinutes()).padStart(2, '0')}`;
+            
+            const event = await createCalendarEvent(calendarId, {
+              patientName: patient?.name || "Unknown Patient",
+              doctorName: doctor.name,
+              date: dateStr,
+              time: timeStr,
+              service: appointment.service || "Dental Appointment",
+              notes: appointment.notes || undefined,
+              duration: appointment.duration,
+            }, timezone);
+            
+            // Update appointment with Google Event ID
+            await storage.updateAppointment(appointment.id, {
+              googleEventId: event.id,
+            });
+            
+            syncedCount++;
+          } catch (e) {
+            console.error(`Failed to sync appointment ${appointment.id}:`, e);
+          }
+        }
+      }
+      
+      res.json({ 
+        success: true, 
+        message: `Synced ${syncedCount} appointments to Google Calendar` 
+      });
+    } catch (error) {
+      console.error("Error syncing calendar:", error);
+      res.status(500).json({ error: "Failed to sync calendar" });
+    }
+  });
+
+  app.delete("/api/doctor/calendar/event/:eventId", requireDoctor, async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      const { calendarId = "primary" } = req.query;
+      
+      await deleteCalendarEvent(calendarId as string, eventId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting calendar event:", error);
+      res.status(500).json({ error: "Failed to delete calendar event" });
+    }
   });
 
   // ========================================
