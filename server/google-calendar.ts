@@ -5,11 +5,23 @@ import { google } from 'googleapis';
 // These should be set from Google Cloud Console OAuth credentials
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = process.env.REPLIT_DEV_DOMAIN 
-  ? `https://${process.env.REPLIT_DEV_DOMAIN}/api/doctor/calendar/callback`
-  : process.env.REPLIT_DEPLOYMENT_URL
-    ? `${process.env.REPLIT_DEPLOYMENT_URL}/api/doctor/calendar/callback`
-    : 'http://localhost:5000/api/doctor/calendar/callback';
+
+// Determine the base URL for OAuth redirects
+// Priority: APP_BASE_URL (explicit) > REPLIT_DEPLOYMENT_URL (production) > REPLIT_DEV_DOMAIN (dev)
+function getBaseUrl(): string {
+  if (process.env.APP_BASE_URL) {
+    return process.env.APP_BASE_URL;
+  }
+  if (process.env.REPLIT_DEPLOYMENT_URL) {
+    return process.env.REPLIT_DEPLOYMENT_URL;
+  }
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  }
+  return 'http://localhost:5000';
+}
+
+const REDIRECT_URI = `${getBaseUrl()}/api/doctor/calendar/callback`;
 
 // Check if OAuth is configured
 export function isOAuthConfigured(): boolean {
