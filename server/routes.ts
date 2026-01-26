@@ -817,39 +817,42 @@ export async function registerRoutes(
 
       const activeDoctors = doctors.filter(d => d.isActive);
       const services = settings?.services || ["General Checkup", "Teeth Cleaning"];
+      const today = new Date().toISOString().split('T')[0];
 
-      // Build system prompt
+      // Build system prompt with function calling instructions
       const systemPrompt = language === "nl"
         ? `Je bent een vriendelijke AI-receptionist voor ${settings?.clinicName || "de tandartskliniek"}. 
 Je helpt patiënten om afspraken te boeken.
 
+Vandaag is: ${today}
 Beschikbare diensten: ${services.join(", ")}
-Beschikbare tandartsen: ${activeDoctors.map(d => `Dr. ${d.name} (${d.specialty})`).join(", ") || "Neem contact op voor beschikbaarheid"}
+Beschikbare tandartsen: ${activeDoctors.map(d => `Dr. ${d.name} (ID: ${d.id}, ${d.specialty})`).join(", ") || "Neem contact op voor beschikbaarheid"}
 Openingstijden: ${settings?.openTime || "09:00"} - ${settings?.closeTime || "17:00"}
-Werkdagen: Maandag t/m Vrijdag
+Werkdagen: Maandag t/m Zaterdag
 
 Instructies:
 1. Wees vriendelijk en professioneel
-2. Verzamel: naam patiënt, telefoonnummer, gewenste dienst, voorkeursdag/tijd
+2. Verzamel: naam patiënt, telefoonnummer, gewenste dienst, voorkeurstijdslot (datum en tijd)
 3. Stel één vraag tegelijk
-4. Bevestig de afspraakgegevens voordat je boekt
-5. Als alle informatie compleet is, bevestig de boeking
+4. Zodra je ALLE informatie hebt (naam, telefoon, dienst, datum, tijd, arts), gebruik de book_appointment functie om te boeken
+5. Bevestig daarna de boeking aan de patiënt
 
 Houd antwoorden kort en behulpzaam.`
         : `You are a friendly AI receptionist for ${settings?.clinicName || "the dental clinic"}. 
 You help patients book appointments.
 
+Today's date is: ${today}
 Available services: ${services.join(", ")}
-Available dentists: ${activeDoctors.map(d => `Dr. ${d.name} (${d.specialty})`).join(", ") || "Please contact for availability"}
+Available dentists: ${activeDoctors.map(d => `Dr. ${d.name} (ID: ${d.id}, ${d.specialty})`).join(", ") || "Please contact for availability"}
 Opening hours: ${settings?.openTime || "09:00"} - ${settings?.closeTime || "17:00"}
-Working days: Monday to Friday
+Working days: Monday to Saturday
 
 Instructions:
 1. Be friendly and professional
-2. Collect: patient name, phone number, service needed, preferred day/time
+2. Collect: patient name, phone number, service needed, preferred time slot (date and time)
 3. Ask one question at a time
-4. Confirm booking details before finalizing
-5. When all info is complete, confirm the booking
+4. Once you have ALL information (name, phone, service, date, time, doctor), use the book_appointment function to book
+5. Then confirm the booking to the patient
 
 Keep responses concise and helpful.`;
 
@@ -859,40 +862,177 @@ Keep responses concise and helpful.`;
         content: m.content,
       }));
 
-      // Set headers for streaming
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
+      // Define the booking function for OpenAI
+      const bookingFunction = {
+        type: "function" as const,
+        function: {
+          name: "book_appointment",
+          description: "Book a dental appointment for a patient. Call this when you have collected all required information: patient name, phone number, service, date, time, and doctor.",
+          parameters: {
+            type: "object",
+            properties: {
+              patientName: {
+                type: "string",
+                description: "Full name of the patient"
+              },
+              patientPhone: {
+                type: "string",
+                description: "Phone number of the patient"
+              },
+              patientEmail: {
+                type: "string",
+                description: "Email address of the patient (optional)"
+              },
+              service: {
+                type: "string",
+                description: "The dental service requested"
+              },
+              doctorId: {
+                type: "number",
+                description: "ID of the selected doctor"
+              },
+              doctorName: {
+                type: "string",
+                description: "Name of the selected doctor"
+              },
+              date: {
+                type: "string",
+                description: "Appointment date in YYYY-MM-DD format"
+              },
+              time: {
+                type: "string",
+                description: "Appointment time in HH:MM format (24-hour)"
+              },
+              notes: {
+                type: "string",
+                description: "Any additional notes from the patient"
+              }
+            },
+            required: ["patientName", "patientPhone", "service", "doctorId", "date", "time"]
+          }
+        }
+      };
 
-      // Call OpenAI with streaming
-      const stream = await openai.chat.completions.create({
-        model: "gpt-5.1",
+      // First call: Check if AI wants to book
+      const initialResponse = await openai.chat.completions.create({
+        model: "gpt-4o",
         messages: [
           { role: "system", content: systemPrompt },
           ...conversationHistory,
           { role: "user", content: message },
         ],
-        stream: true,
-        max_completion_tokens: 500,
+        tools: [bookingFunction],
+        tool_choice: "auto",
       });
 
+      const responseMessage = initialResponse.choices[0]?.message;
       let fullResponse = "";
+      let bookingResult = null;
 
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || "";
-        if (content) {
-          fullResponse += content;
-          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+      // Check if AI called the booking function
+      if (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0) {
+        const toolCall = responseMessage.tool_calls[0] as { id: string; type: string; function: { name: string; arguments: string } };
+        if (toolCall.function?.name === "book_appointment") {
+          try {
+            const bookingData = JSON.parse(toolCall.function.arguments);
+            console.log("Booking appointment:", bookingData);
+
+            // Create or find patient
+            let patient = await storage.getPatientByPhone(bookingData.patientPhone);
+            if (!patient) {
+              patient = await storage.createPatient({
+                name: bookingData.patientName,
+                phone: bookingData.patientPhone,
+                email: bookingData.patientEmail || null,
+                notes: `Booked via chat on ${new Date().toLocaleDateString()}`,
+              });
+              console.log("Created new patient:", patient.id);
+            }
+
+            // Parse date and time
+            const appointmentDateTime = new Date(`${bookingData.date}T${bookingData.time}:00`);
+
+            // Create appointment
+            const appointment = await storage.createAppointment({
+              patientId: patient.id,
+              doctorId: bookingData.doctorId,
+              date: appointmentDateTime,
+              duration: settings?.appointmentDuration || 30,
+              status: "scheduled",
+              service: bookingData.service,
+              notes: bookingData.notes || null,
+              source: "chat",
+            });
+
+            console.log("Created appointment:", appointment.id);
+
+            bookingResult = {
+              success: true,
+              appointmentId: appointment.id,
+              patientName: bookingData.patientName,
+              doctorName: bookingData.doctorName,
+              date: bookingData.date,
+              time: bookingData.time,
+              service: bookingData.service,
+            };
+
+            // Get confirmation message from AI
+            const confirmationResponse = await openai.chat.completions.create({
+              model: "gpt-4o",
+              messages: [
+                { role: "system", content: systemPrompt },
+                ...conversationHistory,
+                { role: "user", content: message },
+                responseMessage,
+                {
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: JSON.stringify({
+                    success: true,
+                    message: `Appointment booked successfully! Appointment ID: ${appointment.id}`,
+                    details: bookingResult
+                  })
+                }
+              ],
+            });
+
+            fullResponse = confirmationResponse.choices[0]?.message?.content || 
+              (language === "nl" 
+                ? `Uw afspraak is geboekt! Afspraak voor ${bookingData.service} met Dr. ${bookingData.doctorName} op ${bookingData.date} om ${bookingData.time}.`
+                : `Your appointment is booked! Appointment for ${bookingData.service} with Dr. ${bookingData.doctorName} on ${bookingData.date} at ${bookingData.time}.`);
+
+          } catch (bookingError) {
+            console.error("Booking error:", bookingError);
+            fullResponse = language === "nl"
+              ? "Er is een fout opgetreden bij het boeken. Probeer het opnieuw."
+              : "There was an error booking your appointment. Please try again.";
+          }
         }
+      } else {
+        // No function call, use the regular response
+        fullResponse = responseMessage?.content || "";
       }
 
-      // Store assistant response
+      // Set headers for response
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      // Send response
       if (fullResponse) {
+        res.write(`data: ${JSON.stringify({ content: fullResponse })}\n\n`);
+        
+        // Store assistant response
         await storage.createChatMessage({
           sessionId,
           role: "assistant",
           content: fullResponse,
         });
+      }
+
+      // Send booking result if available
+      if (bookingResult) {
+        res.write(`data: ${JSON.stringify({ booking: bookingResult })}\n\n`);
       }
 
       res.write("data: [DONE]\n\n");
