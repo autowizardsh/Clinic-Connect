@@ -217,7 +217,102 @@ export async function registerRoutes(
 
   app.post("/api/admin/appointments", requireAdmin, async (req, res) => {
     try {
-      const appointment = await storage.createAppointment(req.body);
+      const { doctorId, patientId, date, service, notes, source } = req.body;
+      
+      // Validate required fields
+      if (!doctorId || !patientId || !date || !service) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      
+      // Parse the date string to Date object
+      const appointmentDate = new Date(date);
+      if (isNaN(appointmentDate.getTime())) {
+        return res.status(400).json({ error: "Invalid date format" });
+      }
+      
+      // Get clinic settings and doctor availability
+      const [settings, doctorAvailability, existingAppointments] = await Promise.all([
+        storage.getClinicSettings(),
+        storage.getDoctorAvailability(doctorId),
+        storage.getAppointmentsByDoctor(doctorId),
+      ]);
+      
+      const appointmentDuration = settings?.appointmentDuration || 30;
+      const dayOfWeek = appointmentDate.getDay();
+      const appointmentHours = appointmentDate.getHours();
+      const appointmentMinutes = appointmentDate.getMinutes();
+      const appointmentTimeMinutes = appointmentHours * 60 + appointmentMinutes;
+      
+      // Check if doctor works on this day
+      const dayAvailability = doctorAvailability.find(a => a.dayOfWeek === dayOfWeek);
+      if (dayAvailability && !dayAvailability.isAvailable) {
+        return res.status(400).json({ 
+          error: `Doctor is not available on ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek]}` 
+        });
+      }
+      
+      // Check working hours
+      const openTime = settings?.openTime || "09:00";
+      const closeTime = settings?.closeTime || "17:00";
+      const [openHour, openMin] = openTime.split(":").map(Number);
+      const [closeHour, closeMin] = closeTime.split(":").map(Number);
+      const openMinutes = openHour * 60 + openMin;
+      const closeMinutes = closeHour * 60 + closeMin;
+      
+      // Use doctor's specific hours if available
+      let slotStart = openMinutes;
+      let slotEnd = closeMinutes;
+      if (dayAvailability && dayAvailability.startTime && dayAvailability.endTime) {
+        const [dStartH, dStartM] = dayAvailability.startTime.split(":").map(Number);
+        const [dEndH, dEndM] = dayAvailability.endTime.split(":").map(Number);
+        slotStart = dStartH * 60 + dStartM;
+        slotEnd = dEndH * 60 + dEndM;
+      }
+      
+      if (appointmentTimeMinutes < slotStart || (appointmentTimeMinutes + appointmentDuration) > slotEnd) {
+        const formatTime = (mins: number) => {
+          const h = Math.floor(mins / 60);
+          const m = mins % 60;
+          return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        };
+        return res.status(400).json({ 
+          error: `Time slot outside working hours. Doctor is available from ${formatTime(slotStart)} to ${formatTime(slotEnd)}` 
+        });
+      }
+      
+      // Check for conflicts with existing appointments
+      const appointmentDateStr = appointmentDate.toISOString().split('T')[0];
+      const conflictingAppointments = existingAppointments.filter(apt => {
+        if (apt.status === 'cancelled') return false;
+        const aptDate = new Date(apt.date);
+        const aptDateStr = aptDate.toISOString().split('T')[0];
+        if (aptDateStr !== appointmentDateStr) return false;
+        
+        const aptStartMins = aptDate.getHours() * 60 + aptDate.getMinutes();
+        const aptEndMins = aptStartMins + (apt.duration || appointmentDuration);
+        const newEndMins = appointmentTimeMinutes + appointmentDuration;
+        
+        return (appointmentTimeMinutes < aptEndMins && newEndMins > aptStartMins);
+      });
+      
+      if (conflictingAppointments.length > 0) {
+        return res.status(400).json({ 
+          error: "This time slot is already booked. Please choose a different time." 
+        });
+      }
+      
+      // Create the appointment
+      const appointment = await storage.createAppointment({
+        doctorId,
+        patientId,
+        date: appointmentDate,
+        duration: appointmentDuration,
+        service,
+        notes: notes || null,
+        source: source || "admin",
+        status: "scheduled",
+      });
+      
       res.json(appointment);
     } catch (error) {
       console.error("Error creating appointment:", error);

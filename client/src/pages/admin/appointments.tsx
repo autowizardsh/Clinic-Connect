@@ -50,16 +50,17 @@ export default function AdminAppointments() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => {
+    mutationFn: async (data: any) => {
       const dateTime = new Date(`${data.date}T${data.time}`);
-      return apiRequest("POST", "/api/admin/appointments", {
+      const response = await apiRequest("POST", "/api/admin/appointments", {
         doctorId: parseInt(data.doctorId),
         patientId: parseInt(data.patientId),
         date: dateTime.toISOString(),
         service: data.service,
         notes: data.notes,
-        source: "manual",
+        source: "admin",
       });
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/appointments"] });
@@ -67,8 +68,17 @@ export default function AdminAppointments() {
       setIsOpen(false);
       form.reset();
     },
-    onError: () => {
-      toast({ title: "Failed to create appointment", variant: "destructive" });
+    onError: async (error: any) => {
+      let message = "Failed to create appointment";
+      if (error?.response) {
+        try {
+          const data = await error.response.json();
+          message = data.error || message;
+        } catch {}
+      } else if (error?.message) {
+        message = error.message;
+      }
+      toast({ title: message, variant: "destructive" });
     },
   });
 
