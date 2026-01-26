@@ -1366,7 +1366,7 @@ STYLE RULES:
                 // Check if requested time overlaps with blocked time
                 if (requestedMinutes < blockEnd && appointmentEndMinutes > blockStart) {
                   throw new Error(
-                    `SLOT_UNAVAILABLE: Dr. ${bookingData.doctorName} is not available on ${bookingData.date} from ${block.startTime.slice(0, 5)} to ${block.endTime.slice(0, 5)}${block.reason ? ` (${block.reason})` : ''}. Please choose a different time.`,
+                    `SLOT_UNAVAILABLE: ${bookingData.doctorName} is not available on ${bookingData.date} from ${block.startTime.slice(0, 5)} to ${block.endTime.slice(0, 5)}${block.reason ? ` (${block.reason})` : ''}.`,
                   );
                 }
               }
