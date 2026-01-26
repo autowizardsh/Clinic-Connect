@@ -241,7 +241,8 @@ export async function registerRoutes(
       }
       
       // Get clinic settings and doctor's date-specific unavailability
-      const appointmentDateStr = appointmentDate.toISOString().split('T')[0];
+      // Use local date string to avoid timezone issues
+      const appointmentDateStr = `${appointmentDate.getFullYear()}-${String(appointmentDate.getMonth() + 1).padStart(2, '0')}-${String(appointmentDate.getDate()).padStart(2, '0')}`;
       const [settings, doctorUnavailability, existingAppointments] = await Promise.all([
         storage.getClinicSettings(),
         storage.getDoctorAvailabilityForDate(doctorId, appointmentDateStr),
@@ -294,7 +295,8 @@ export async function registerRoutes(
       const conflictingAppointments = existingAppointments.filter(apt => {
         if (apt.status === 'cancelled') return false;
         const aptDate = new Date(apt.date);
-        const aptDateStr = aptDate.toISOString().split('T')[0];
+        // Use local date string to avoid timezone issues
+        const aptDateStr = `${aptDate.getFullYear()}-${String(aptDate.getMonth() + 1).padStart(2, '0')}-${String(aptDate.getDate()).padStart(2, '0')}`;
         if (aptDateStr !== appointmentDateStr) return false;
         
         const aptStartMins = aptDate.getHours() * 60 + aptDate.getMinutes();
@@ -989,7 +991,8 @@ export async function registerRoutes(
     ) {
       const checkDate = new Date(requestedDate);
       checkDate.setDate(checkDate.getDate() + dayOffset);
-      const dateStr = checkDate.toISOString().split("T")[0];
+      // Use local date string to avoid timezone issues
+      const dateStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
       const dayOfWeek = checkDate.getDay();
 
       // Skip non-working days
@@ -1001,8 +1004,10 @@ export async function registerRoutes(
       // Get appointments for this specific day
       const dayAppointments = existingAppointments.filter((apt) => {
         if (apt.status === "cancelled") return false;
-        const aptDate = new Date(apt.date).toISOString().split("T")[0];
-        return aptDate === dateStr;
+        const aptDate = new Date(apt.date);
+        // Use local date string to avoid timezone issues
+        const aptDateLocalStr = `${aptDate.getFullYear()}-${String(aptDate.getMonth() + 1).padStart(2, '0')}-${String(aptDate.getDate()).padStart(2, '0')}`;
+        return aptDateLocalStr === dateStr;
       });
 
       // Check each time slot
@@ -1082,7 +1087,13 @@ export async function registerRoutes(
         "Teeth Cleaning",
       ];
       const now = new Date();
-      const today = now.toISOString().split("T")[0];
+      // Helper to format date as local YYYY-MM-DD
+      const formatLocalDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const today = formatLocalDate(now);
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const dayAfterTomorrow = new Date(now);
+      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
       const dayNames = [
         "Sunday",
         "Monday",
@@ -1111,8 +1122,8 @@ Praat natuurlijk alsof je een echte persoon bent die echt wil helpen. Wees bekno
 
 DATUMCONTEXT:
 - Vandaag: ${dayNamesNL[currentDayOfWeek]}, ${today}
-- "morgen" = ${new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split("T")[0]}
-- "overmorgen" = ${new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString().split("T")[0]}
+- "morgen" = ${formatLocalDate(tomorrow)}
+- "overmorgen" = ${formatLocalDate(dayAfterTomorrow)}
 - Bereken dagnamen naar exacte datums. Boek NOOIT in het verleden.
 
 KLINIEKINFO:
@@ -1142,8 +1153,8 @@ Talk naturally like a real person who genuinely wants to help. Be concise but fr
 
 DATE CONTEXT:
 - Today: ${dayNames[currentDayOfWeek]}, ${today}
-- "tomorrow" = ${new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().split("T")[0]}
-- "day after tomorrow" = ${new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString().split("T")[0]}
+- "tomorrow" = ${formatLocalDate(tomorrow)}
+- "day after tomorrow" = ${formatLocalDate(dayAfterTomorrow)}
 - Convert day names to exact dates. NEVER book in the past.
 
 CLINIC INFO:
