@@ -872,14 +872,24 @@ export async function registerRoutes(
 
       const activeDoctors = doctors.filter(d => d.isActive);
       const services = settings?.services || ["General Checkup", "Teeth Cleaning"];
-      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const dayNamesNL = ['Zondag', 'Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag'];
+      const currentDayOfWeek = now.getDay();
 
       // Build system prompt with function calling instructions
       const systemPrompt = language === "nl"
         ? `Je bent een vriendelijke AI-receptionist voor ${settings?.clinicName || "de tandartskliniek"}. 
 Je helpt patiënten om afspraken te boeken.
 
-Vandaag is: ${today}
+BELANGRIJKE DATUMINFORMATIE:
+- Vandaag is: ${dayNamesNL[currentDayOfWeek]}, ${today}
+- Wanneer de patiënt zegt "morgen", bereken de datum als ${new Date(now.getTime() + 24*60*60*1000).toISOString().split('T')[0]}
+- Wanneer de patiënt zegt "overmorgen", bereken de datum als ${new Date(now.getTime() + 48*60*60*1000).toISOString().split('T')[0]}
+- Wanneer de patiënt een dag noemt (bijv. "volgende vrijdag"), bereken de exacte datum vanaf vandaag
+- Boek NOOIT op een datum in het verleden
+
 Beschikbare diensten: ${services.join(", ")}
 Beschikbare tandartsen: ${activeDoctors.map(d => `Dr. ${d.name} (ID: ${d.id}, ${d.specialty})`).join(", ") || "Neem contact op voor beschikbaarheid"}
 Openingstijden: ${settings?.openTime || "09:00"} - ${settings?.closeTime || "17:00"}
@@ -889,14 +899,21 @@ Instructies:
 1. Wees vriendelijk en professioneel
 2. Verzamel: naam patiënt, telefoonnummer, gewenste dienst, voorkeurstijdslot (datum en tijd)
 3. Stel één vraag tegelijk
-4. Zodra je ALLE informatie hebt (naam, telefoon, dienst, datum, tijd, arts), gebruik de book_appointment functie om te boeken
-5. Bevestig daarna de boeking aan de patiënt
+4. Converteer relatieve datums (morgen, volgende week, volgende maandag) naar YYYY-MM-DD formaat
+5. Zodra je ALLE informatie hebt (naam, telefoon, dienst, datum, tijd, arts), gebruik de book_appointment functie om te boeken
+6. Bevestig daarna de boeking aan de patiënt
 
 Houd antwoorden kort en behulpzaam.`
         : `You are a friendly AI receptionist for ${settings?.clinicName || "the dental clinic"}. 
 You help patients book appointments.
 
-Today's date is: ${today}
+IMPORTANT DATE INFORMATION:
+- Today is: ${dayNames[currentDayOfWeek]}, ${today}
+- When patient says "tomorrow", calculate date as ${new Date(now.getTime() + 24*60*60*1000).toISOString().split('T')[0]}
+- When patient says "day after tomorrow", calculate date as ${new Date(now.getTime() + 48*60*60*1000).toISOString().split('T')[0]}
+- When patient mentions a day name (e.g., "next Friday"), calculate the exact date from today
+- NEVER book appointments on past dates
+
 Available services: ${services.join(", ")}
 Available dentists: ${activeDoctors.map(d => `Dr. ${d.name} (ID: ${d.id}, ${d.specialty})`).join(", ") || "Please contact for availability"}
 Opening hours: ${settings?.openTime || "09:00"} - ${settings?.closeTime || "17:00"}
@@ -906,8 +923,9 @@ Instructions:
 1. Be friendly and professional
 2. Collect: patient name, phone number, service needed, preferred time slot (date and time)
 3. Ask one question at a time
-4. Once you have ALL information (name, phone, service, date, time, doctor), use the book_appointment function to book
-5. Then confirm the booking to the patient
+4. Convert relative dates (tomorrow, next week, next Monday) to YYYY-MM-DD format
+5. Once you have ALL information (name, phone, service, date, time, doctor), use the book_appointment function to book
+6. Then confirm the booking to the patient
 
 Keep responses concise and helpful.`;
 
@@ -995,6 +1013,22 @@ Keep responses concise and helpful.`;
             // Parse date and time
             const appointmentDateTime = new Date(`${bookingData.date}T${bookingData.time}:00`);
             const appointmentDuration = settings?.appointmentDuration || 30;
+
+            // Check if date is in the past
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const appointmentDate = new Date(appointmentDateTime.getFullYear(), appointmentDateTime.getMonth(), appointmentDateTime.getDate());
+            
+            if (appointmentDate < todayStart) {
+              throw new Error(`SLOT_UNAVAILABLE: Cannot book appointments in the past. Please choose a future date.`);
+            }
+            
+            // If booking for today, check if the time hasn't passed
+            if (appointmentDate.getTime() === todayStart.getTime()) {
+              if (appointmentDateTime.getTime() < now.getTime()) {
+                throw new Error(`SLOT_UNAVAILABLE: This time has already passed. Please choose a later time today or another day.`);
+              }
+            }
 
             // Check if time is within working hours
             const openTime = settings?.openTime || "09:00:00";
