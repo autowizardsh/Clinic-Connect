@@ -324,6 +324,41 @@ export async function registerRoutes(
         status: "scheduled",
       });
       
+      // Sync to Google Calendar if doctor has it connected
+      try {
+        const doctor = await storage.getDoctorById(doctorId);
+        if (doctor?.googleRefreshToken) {
+          const patient = await storage.getPatientById(patientId);
+          const formatLocalDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const dateStr = formatLocalDate(appointmentDate);
+          const timeStr = `${String(appointmentDate.getHours()).padStart(2, "0")}:${String(appointmentDate.getMinutes()).padStart(2, "0")}`;
+          
+          const event = await createCalendarEvent(
+            doctor.googleRefreshToken,
+            doctor.googleCalendarId || "primary",
+            {
+              patientName: patient?.name || "Unknown Patient",
+              doctorName: doctor.name,
+              date: dateStr,
+              time: timeStr,
+              service: service || "Dental Appointment",
+              notes: notes || undefined,
+              duration: appointmentDuration,
+            },
+            "Europe/Amsterdam"
+          );
+          
+          // Update appointment with Google Event ID
+          await storage.updateAppointment(appointment.id, {
+            googleEventId: event.id,
+          });
+          console.log("Created Google Calendar event for appointment:", appointment.id);
+        }
+      } catch (calendarError) {
+        console.error("Failed to sync to Google Calendar:", calendarError);
+        // Don't fail the appointment creation, just log the error
+      }
+      
       res.json(appointment);
     } catch (error) {
       console.error("Error creating appointment:", error);
@@ -1440,6 +1475,36 @@ STYLE RULES:
             });
 
             console.log("Created appointment:", appointment.id);
+
+            // Sync to Google Calendar if doctor has it connected
+            try {
+              const doctor = await storage.getDoctorById(bookingData.doctorId);
+              if (doctor?.googleRefreshToken) {
+                const event = await createCalendarEvent(
+                  doctor.googleRefreshToken,
+                  doctor.googleCalendarId || "primary",
+                  {
+                    patientName: bookingData.patientName,
+                    doctorName: doctor.name,
+                    date: bookingData.date,
+                    time: bookingData.time,
+                    service: bookingData.service || "Dental Appointment",
+                    notes: bookingData.notes || undefined,
+                    duration: appointmentDuration,
+                  },
+                  "Europe/Amsterdam"
+                );
+                
+                // Update appointment with Google Event ID
+                await storage.updateAppointment(appointment.id, {
+                  googleEventId: event.id,
+                });
+                console.log("Created Google Calendar event for chat appointment:", appointment.id);
+              }
+            } catch (calendarError) {
+              console.error("Failed to sync chat appointment to Google Calendar:", calendarError);
+              // Don't fail the booking, just log the error
+            }
 
             bookingResult = {
               success: true,
