@@ -982,10 +982,13 @@ export async function registerRoutes(
     const availableSlots: { date: string; time: string }[] = [];
     const slotInterval = 30; // Check every 30 minutes
 
-    // Try requested day first, then next day
+    // Get doctor-specific availability
+    const doctorAvailability = await storage.getDoctorAvailability(doctorId);
+
+    // Try requested day first, then next 7 days
     for (
       let dayOffset = 0;
-      dayOffset <= 1 && availableSlots.length < 3;
+      dayOffset <= 7 && availableSlots.length < 3;
       dayOffset++
     ) {
       const checkDate = new Date(requestedDate);
@@ -995,6 +998,9 @@ export async function registerRoutes(
 
       // Skip non-working days
       if (!workingDays.includes(dayOfWeek)) continue;
+
+      // Get doctor's availability for this day
+      const dayAvailability = doctorAvailability.find(a => a.dayOfWeek === dayOfWeek);
 
       // Get appointments for this specific day
       const dayAppointments = existingAppointments.filter((apt) => {
@@ -1011,6 +1017,19 @@ export async function registerRoutes(
       ) {
         const slotStart = minutes;
         const slotEnd = minutes + duration;
+
+        // Check if slot falls within doctor's unavailable time
+        if (dayAvailability && !dayAvailability.isAvailable) {
+          const [unavailStartH, unavailStartM] = dayAvailability.startTime.split(":").map(Number);
+          const [unavailEndH, unavailEndM] = dayAvailability.endTime.split(":").map(Number);
+          const unavailStart = unavailStartH * 60 + unavailStartM;
+          const unavailEnd = unavailEndH * 60 + unavailEndM;
+          
+          // Skip if slot overlaps with unavailable period
+          if (slotStart < unavailEnd && slotEnd > unavailStart) {
+            continue;
+          }
+        }
 
         // Check if this slot conflicts with any existing appointment
         const hasConflict = dayAppointments.some((apt) => {
@@ -1321,6 +1340,45 @@ STYLE RULES:
               throw new Error(
                 `SLOT_UNAVAILABLE: ${dayNames[dayOfWeek]} is not a working day. Please choose another day.`,
               );
+            }
+
+            // Check doctor-specific availability
+            const doctorAvailability = await storage.getDoctorAvailability(bookingData.doctorId);
+            const dayAvailability = doctorAvailability.find(a => a.dayOfWeek === dayOfWeek);
+            
+            if (dayAvailability) {
+              const dayNames = [
+                "Sunday",
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+              ];
+              
+              // If doctor marked this day as not available
+              if (!dayAvailability.isAvailable) {
+                // Parse the unavailable time range
+                const [unavailStartH, unavailStartM] = dayAvailability.startTime.split(":").map(Number);
+                const [unavailEndH, unavailEndM] = dayAvailability.endTime.split(":").map(Number);
+                const unavailStart = unavailStartH * 60 + unavailStartM;
+                const unavailEnd = unavailEndH * 60 + unavailEndM;
+                
+                // Check if requested time falls within unavailable range
+                if (requestedMinutes >= unavailStart && requestedMinutes < unavailEnd) {
+                  throw new Error(
+                    `SLOT_UNAVAILABLE: Dr. ${bookingData.doctorName} is not available on ${dayNames[dayOfWeek]} from ${dayAvailability.startTime.slice(0, 5)} to ${dayAvailability.endTime.slice(0, 5)}. Please choose a different time.`,
+                  );
+                }
+                
+                // Also check if appointment end time would fall into unavailable period
+                if (appointmentEndMinutes > unavailStart && requestedMinutes < unavailEnd) {
+                  throw new Error(
+                    `SLOT_UNAVAILABLE: Dr. ${bookingData.doctorName} is not available on ${dayNames[dayOfWeek]} from ${dayAvailability.startTime.slice(0, 5)} to ${dayAvailability.endTime.slice(0, 5)}. Please choose a different time.`,
+                  );
+                }
+              }
             }
 
             // Check for conflicting appointments
