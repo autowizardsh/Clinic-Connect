@@ -240,28 +240,21 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid date format" });
       }
       
-      // Get clinic settings and doctor availability
-      const [settings, doctorAvailability, existingAppointments] = await Promise.all([
+      // Get clinic settings and doctor's date-specific unavailability
+      const appointmentDateStr = appointmentDate.toISOString().split('T')[0];
+      const [settings, doctorUnavailability, existingAppointments] = await Promise.all([
         storage.getClinicSettings(),
-        storage.getDoctorAvailability(doctorId),
+        storage.getDoctorAvailabilityForDate(doctorId, appointmentDateStr),
         storage.getAppointmentsByDoctorId(doctorId),
       ]);
       
       const appointmentDuration = settings?.appointmentDuration || 30;
-      const dayOfWeek = appointmentDate.getDay();
       const appointmentHours = appointmentDate.getHours();
       const appointmentMinutes = appointmentDate.getMinutes();
       const appointmentTimeMinutes = appointmentHours * 60 + appointmentMinutes;
+      const appointmentEndMinutes = appointmentTimeMinutes + appointmentDuration;
       
-      // Check if doctor works on this day
-      const dayAvailability = doctorAvailability.find(a => a.dayOfWeek === dayOfWeek);
-      if (dayAvailability && !dayAvailability.isAvailable) {
-        return res.status(400).json({ 
-          error: `Doctor is not available on ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek]}` 
-        });
-      }
-      
-      // Check working hours
+      // Check working hours from clinic settings
       const openTime = settings?.openTime || "09:00";
       const closeTime = settings?.closeTime || "17:00";
       const [openHour, openMin] = openTime.split(":").map(Number);
@@ -269,29 +262,35 @@ export async function registerRoutes(
       const openMinutes = openHour * 60 + openMin;
       const closeMinutes = closeHour * 60 + closeMin;
       
-      // Use doctor's specific hours if available
-      let slotStart = openMinutes;
-      let slotEnd = closeMinutes;
-      if (dayAvailability && dayAvailability.startTime && dayAvailability.endTime) {
-        const [dStartH, dStartM] = dayAvailability.startTime.split(":").map(Number);
-        const [dEndH, dEndM] = dayAvailability.endTime.split(":").map(Number);
-        slotStart = dStartH * 60 + dStartM;
-        slotEnd = dEndH * 60 + dEndM;
-      }
-      
-      if (appointmentTimeMinutes < slotStart || (appointmentTimeMinutes + appointmentDuration) > slotEnd) {
+      if (appointmentTimeMinutes < openMinutes || appointmentEndMinutes > closeMinutes) {
         const formatTime = (mins: number) => {
           const h = Math.floor(mins / 60);
           const m = mins % 60;
           return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
         };
         return res.status(400).json({ 
-          error: `Time slot outside working hours. Doctor is available from ${formatTime(slotStart)} to ${formatTime(slotEnd)}` 
+          error: `Time slot outside working hours. Clinic is open from ${formatTime(openMinutes)} to ${formatTime(closeMinutes)}` 
         });
       }
       
+      // Check if doctor is unavailable on this specific date/time
+      for (const block of doctorUnavailability) {
+        if (!block.isAvailable) {
+          const [blockStartH, blockStartM] = block.startTime.split(":").map(Number);
+          const [blockEndH, blockEndM] = block.endTime.split(":").map(Number);
+          const blockStart = blockStartH * 60 + blockStartM;
+          const blockEnd = blockEndH * 60 + blockEndM;
+          
+          // Check if appointment overlaps with blocked time
+          if (appointmentTimeMinutes < blockEnd && appointmentEndMinutes > blockStart) {
+            return res.status(400).json({ 
+              error: `Doctor is not available on ${appointmentDateStr} from ${block.startTime.slice(0, 5)} to ${block.endTime.slice(0, 5)}${block.reason ? ` (${block.reason})` : ''}` 
+            });
+          }
+        }
+      }
+      
       // Check for conflicts with existing appointments
-      const appointmentDateStr = appointmentDate.toISOString().split('T')[0];
       const conflictingAppointments = existingAppointments.filter(apt => {
         if (apt.status === 'cancelled') return false;
         const aptDate = new Date(apt.date);
@@ -982,9 +981,6 @@ export async function registerRoutes(
     const availableSlots: { date: string; time: string }[] = [];
     const slotInterval = 30; // Check every 30 minutes
 
-    // Get doctor-specific availability
-    const doctorAvailability = await storage.getDoctorAvailability(doctorId);
-
     // Try requested day first, then next 7 days
     for (
       let dayOffset = 0;
@@ -999,8 +995,8 @@ export async function registerRoutes(
       // Skip non-working days
       if (!workingDays.includes(dayOfWeek)) continue;
 
-      // Get doctor's availability for this day
-      const dayAvailability = doctorAvailability.find(a => a.dayOfWeek === dayOfWeek);
+      // Get doctor's date-specific unavailability
+      const dateUnavailability = await storage.getDoctorAvailabilityForDate(doctorId, dateStr);
 
       // Get appointments for this specific day
       const dayAppointments = existingAppointments.filter((apt) => {
@@ -1018,18 +1014,22 @@ export async function registerRoutes(
         const slotStart = minutes;
         const slotEnd = minutes + duration;
 
-        // Check if slot falls within doctor's unavailable time
-        if (dayAvailability && !dayAvailability.isAvailable) {
-          const [unavailStartH, unavailStartM] = dayAvailability.startTime.split(":").map(Number);
-          const [unavailEndH, unavailEndM] = dayAvailability.endTime.split(":").map(Number);
-          const unavailStart = unavailStartH * 60 + unavailStartM;
-          const unavailEnd = unavailEndH * 60 + unavailEndM;
-          
-          // Skip if slot overlaps with unavailable period
-          if (slotStart < unavailEnd && slotEnd > unavailStart) {
-            continue;
+        // Check if slot overlaps with any blocked time for this date
+        let isBlocked = false;
+        for (const block of dateUnavailability) {
+          if (!block.isAvailable) {
+            const [blockStartH, blockStartM] = block.startTime.split(":").map(Number);
+            const [blockEndH, blockEndM] = block.endTime.split(":").map(Number);
+            const blockStart = blockStartH * 60 + blockStartM;
+            const blockEnd = blockEndH * 60 + blockEndM;
+            
+            if (slotStart < blockEnd && slotEnd > blockStart) {
+              isBlocked = true;
+              break;
+            }
           }
         }
+        if (isBlocked) continue;
 
         // Check if this slot conflicts with any existing appointment
         const hasConflict = dayAppointments.some((apt) => {
@@ -1342,40 +1342,20 @@ STYLE RULES:
               );
             }
 
-            // Check doctor-specific availability
-            const doctorAvailability = await storage.getDoctorAvailability(bookingData.doctorId);
-            const dayAvailability = doctorAvailability.find(a => a.dayOfWeek === dayOfWeek);
+            // Check doctor's date-specific unavailability
+            const doctorUnavailability = await storage.getDoctorAvailabilityForDate(bookingData.doctorId, bookingData.date);
             
-            if (dayAvailability) {
-              const dayNames = [
-                "Sunday",
-                "Monday",
-                "Tuesday",
-                "Wednesday",
-                "Thursday",
-                "Friday",
-                "Saturday",
-              ];
-              
-              // If doctor marked this day as not available
-              if (!dayAvailability.isAvailable) {
-                // Parse the unavailable time range
-                const [unavailStartH, unavailStartM] = dayAvailability.startTime.split(":").map(Number);
-                const [unavailEndH, unavailEndM] = dayAvailability.endTime.split(":").map(Number);
-                const unavailStart = unavailStartH * 60 + unavailStartM;
-                const unavailEnd = unavailEndH * 60 + unavailEndM;
+            for (const block of doctorUnavailability) {
+              if (!block.isAvailable) {
+                const [blockStartH, blockStartM] = block.startTime.split(":").map(Number);
+                const [blockEndH, blockEndM] = block.endTime.split(":").map(Number);
+                const blockStart = blockStartH * 60 + blockStartM;
+                const blockEnd = blockEndH * 60 + blockEndM;
                 
-                // Check if requested time falls within unavailable range
-                if (requestedMinutes >= unavailStart && requestedMinutes < unavailEnd) {
+                // Check if requested time overlaps with blocked time
+                if (requestedMinutes < blockEnd && appointmentEndMinutes > blockStart) {
                   throw new Error(
-                    `SLOT_UNAVAILABLE: Dr. ${bookingData.doctorName} is not available on ${dayNames[dayOfWeek]} from ${dayAvailability.startTime.slice(0, 5)} to ${dayAvailability.endTime.slice(0, 5)}. Please choose a different time.`,
-                  );
-                }
-                
-                // Also check if appointment end time would fall into unavailable period
-                if (appointmentEndMinutes > unavailStart && requestedMinutes < unavailEnd) {
-                  throw new Error(
-                    `SLOT_UNAVAILABLE: Dr. ${bookingData.doctorName} is not available on ${dayNames[dayOfWeek]} from ${dayAvailability.startTime.slice(0, 5)} to ${dayAvailability.endTime.slice(0, 5)}. Please choose a different time.`,
+                    `SLOT_UNAVAILABLE: Dr. ${bookingData.doctorName} is not available on ${bookingData.date} from ${block.startTime.slice(0, 5)} to ${block.endTime.slice(0, 5)}${block.reason ? ` (${block.reason})` : ''}. Please choose a different time.`,
                   );
                 }
               }

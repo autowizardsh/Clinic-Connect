@@ -61,8 +61,9 @@ export interface IStorage {
   updateAppointment(id: number, appointment: Partial<InsertAppointment>): Promise<Appointment | undefined>;
   deleteAppointment(id: number): Promise<void>;
 
-  // Doctor Availability
+  // Doctor Availability (Date-specific)
   getDoctorAvailability(doctorId: number): Promise<DoctorAvailability[]>;
+  getDoctorAvailabilityForDate(doctorId: number, date: string): Promise<DoctorAvailability[]>;
   createDoctorAvailability(availability: InsertDoctorAvailability): Promise<DoctorAvailability>;
   updateDoctorAvailability(id: number, availability: Partial<InsertDoctorAvailability>): Promise<DoctorAvailability | undefined>;
   deleteDoctorAvailability(id: number): Promise<void>;
@@ -266,13 +267,23 @@ export class DatabaseStorage implements IStorage {
     await db.delete(appointments).where(eq(appointments.id, id));
   }
 
-  // Doctor Availability
+  // Doctor Availability (Date-specific)
   async getDoctorAvailability(doctorId: number): Promise<DoctorAvailability[]> {
     return db
       .select()
       .from(doctorAvailability)
       .where(eq(doctorAvailability.doctorId, doctorId))
-      .orderBy(doctorAvailability.dayOfWeek);
+      .orderBy(doctorAvailability.date);
+  }
+
+  async getDoctorAvailabilityForDate(doctorId: number, date: string): Promise<DoctorAvailability[]> {
+    return db
+      .select()
+      .from(doctorAvailability)
+      .where(and(
+        eq(doctorAvailability.doctorId, doctorId),
+        eq(doctorAvailability.date, date)
+      ));
   }
 
   async createDoctorAvailability(availability: InsertDoctorAvailability): Promise<DoctorAvailability> {
