@@ -234,7 +234,7 @@ export async function registerRoutes(
       const [settings, doctorAvailability, existingAppointments] = await Promise.all([
         storage.getClinicSettings(),
         storage.getDoctorAvailability(doctorId),
-        storage.getAppointmentsByDoctor(doctorId),
+        storage.getAppointmentsByDoctorId(doctorId),
       ]);
       
       const appointmentDuration = settings?.appointmentDuration || 30;
