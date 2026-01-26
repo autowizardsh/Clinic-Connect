@@ -793,6 +793,61 @@ export async function registerRoutes(
     }
   });
 
+  // Helper function to find available slots
+  async function findAvailableSlots(
+    doctorId: number,
+    requestedDate: string,
+    openMinutes: number,
+    closeMinutes: number,
+    duration: number,
+    existingAppointments: any[],
+    workingDays: number[]
+  ): Promise<{ date: string; time: string }[]> {
+    const availableSlots: { date: string; time: string }[] = [];
+    const slotInterval = 30; // Check every 30 minutes
+    
+    // Try requested day first, then next day
+    for (let dayOffset = 0; dayOffset <= 1 && availableSlots.length < 3; dayOffset++) {
+      const checkDate = new Date(requestedDate);
+      checkDate.setDate(checkDate.getDate() + dayOffset);
+      const dateStr = checkDate.toISOString().split('T')[0];
+      const dayOfWeek = checkDate.getDay();
+      
+      // Skip non-working days
+      if (!workingDays.includes(dayOfWeek)) continue;
+      
+      // Get appointments for this specific day
+      const dayAppointments = existingAppointments.filter(apt => {
+        if (apt.status === 'cancelled') return false;
+        const aptDate = new Date(apt.date).toISOString().split('T')[0];
+        return aptDate === dateStr;
+      });
+      
+      // Check each time slot
+      for (let minutes = openMinutes; minutes + duration <= closeMinutes && availableSlots.length < 3; minutes += slotInterval) {
+        const slotStart = minutes;
+        const slotEnd = minutes + duration;
+        
+        // Check if this slot conflicts with any existing appointment
+        const hasConflict = dayAppointments.some(apt => {
+          const aptDate = new Date(apt.date);
+          const aptStartMinutes = aptDate.getHours() * 60 + aptDate.getMinutes();
+          const aptEndMinutes = aptStartMinutes + apt.duration;
+          return (slotStart < aptEndMinutes && slotEnd > aptStartMinutes);
+        });
+        
+        if (!hasConflict) {
+          const hours = Math.floor(minutes / 60);
+          const mins = minutes % 60;
+          const timeStr = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+          availableSlots.push({ date: dateStr, time: timeStr });
+        }
+      }
+    }
+    
+    return availableSlots;
+  }
+
   app.post("/api/chat/message", async (req, res) => {
     try {
       const { sessionId, message, language = "en" } = req.body;
@@ -983,7 +1038,23 @@ Keep responses concise and helpful.`;
             });
 
             if (conflictingAppointment) {
-              throw new Error(`SLOT_UNAVAILABLE: This time slot is already booked. Please choose a different time.`);
+              // Find alternative slots
+              const alternativeSlots = await findAvailableSlots(
+                bookingData.doctorId,
+                bookingData.date,
+                openMinutes,
+                closeMinutes,
+                appointmentDuration,
+                existingAppointments,
+                workingDays
+              );
+              
+              if (alternativeSlots.length > 0) {
+                const slotsText = alternativeSlots.map(s => `${s.date} at ${s.time}`).join(', ');
+                throw new Error(`SLOT_UNAVAILABLE_WITH_ALTERNATIVES: This time slot is already booked. Available slots: ${slotsText}`);
+              } else {
+                throw new Error(`SLOT_UNAVAILABLE: This time slot is already booked and no alternatives found for this day. Please try a different day.`);
+              }
             }
 
             // Create or find patient
@@ -1050,8 +1121,13 @@ Keep responses concise and helpful.`;
           } catch (bookingError: any) {
             console.error("Booking error:", bookingError);
             
-            // Check if it's a slot unavailability error
-            if (bookingError.message?.startsWith('SLOT_UNAVAILABLE:')) {
+            // Check if it's a slot unavailability error with alternatives
+            if (bookingError.message?.startsWith('SLOT_UNAVAILABLE_WITH_ALTERNATIVES:')) {
+              const reason = bookingError.message.replace('SLOT_UNAVAILABLE_WITH_ALTERNATIVES: ', '');
+              fullResponse = language === "nl"
+                ? `Sorry, dit tijdslot is al geboekt. ${reason}. Wilt u een van deze tijden boeken?`
+                : `Sorry, this time slot is already booked. ${reason}. Would you like to book one of these times?`;
+            } else if (bookingError.message?.startsWith('SLOT_UNAVAILABLE:')) {
               const reason = bookingError.message.replace('SLOT_UNAVAILABLE: ', '');
               fullResponse = language === "nl"
                 ? `Sorry, dit tijdslot is niet beschikbaar. ${reason} Kies alstublieft een ander tijdstip.`
