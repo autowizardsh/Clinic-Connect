@@ -937,6 +937,55 @@ Keep responses concise and helpful.`;
             const bookingData = JSON.parse(toolCall.function.arguments);
             console.log("Booking appointment:", bookingData);
 
+            // Parse date and time
+            const appointmentDateTime = new Date(`${bookingData.date}T${bookingData.time}:00`);
+            const appointmentDuration = settings?.appointmentDuration || 30;
+
+            // Check if time is within working hours
+            const openTime = settings?.openTime || "09:00:00";
+            const closeTime = settings?.closeTime || "17:00:00";
+            const requestedTime = bookingData.time;
+            
+            // Parse times for comparison
+            const [openHour, openMin] = openTime.split(':').map(Number);
+            const [closeHour, closeMin] = closeTime.split(':').map(Number);
+            const [reqHour, reqMin] = requestedTime.split(':').map(Number);
+            
+            const openMinutes = openHour * 60 + openMin;
+            const closeMinutes = closeHour * 60 + closeMin;
+            const requestedMinutes = reqHour * 60 + reqMin;
+            const appointmentEndMinutes = requestedMinutes + appointmentDuration;
+
+            if (requestedMinutes < openMinutes || appointmentEndMinutes > closeMinutes) {
+              throw new Error(`SLOT_UNAVAILABLE: The requested time is outside working hours (${openTime.slice(0,5)} - ${closeTime.slice(0,5)})`);
+            }
+
+            // Check if it's a working day
+            const dayOfWeek = appointmentDateTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
+            const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6]; // Mon-Sat by default
+            if (!workingDays.includes(dayOfWeek)) {
+              const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+              throw new Error(`SLOT_UNAVAILABLE: ${dayNames[dayOfWeek]} is not a working day. Please choose another day.`);
+            }
+
+            // Check for conflicting appointments
+            const existingAppointments = await storage.getAppointmentsByDoctorId(bookingData.doctorId);
+            const conflictingAppointment = existingAppointments.find(apt => {
+              if (apt.status === 'cancelled') return false;
+              
+              const aptStart = new Date(apt.date).getTime();
+              const aptEnd = aptStart + (apt.duration * 60 * 1000);
+              const newStart = appointmentDateTime.getTime();
+              const newEnd = newStart + (appointmentDuration * 60 * 1000);
+              
+              // Check for overlap
+              return (newStart < aptEnd && newEnd > aptStart);
+            });
+
+            if (conflictingAppointment) {
+              throw new Error(`SLOT_UNAVAILABLE: This time slot is already booked. Please choose a different time.`);
+            }
+
             // Create or find patient
             let patient = await storage.getPatientByPhone(bookingData.patientPhone);
             if (!patient) {
@@ -949,15 +998,12 @@ Keep responses concise and helpful.`;
               console.log("Created new patient:", patient.id);
             }
 
-            // Parse date and time
-            const appointmentDateTime = new Date(`${bookingData.date}T${bookingData.time}:00`);
-
             // Create appointment
             const appointment = await storage.createAppointment({
               patientId: patient.id,
               doctorId: bookingData.doctorId,
               date: appointmentDateTime,
-              duration: settings?.appointmentDuration || 30,
+              duration: appointmentDuration,
               status: "scheduled",
               service: bookingData.service,
               notes: bookingData.notes || null,
@@ -1001,11 +1047,20 @@ Keep responses concise and helpful.`;
                 ? `Uw afspraak is geboekt! Afspraak voor ${bookingData.service} met Dr. ${bookingData.doctorName} op ${bookingData.date} om ${bookingData.time}.`
                 : `Your appointment is booked! Appointment for ${bookingData.service} with Dr. ${bookingData.doctorName} on ${bookingData.date} at ${bookingData.time}.`);
 
-          } catch (bookingError) {
+          } catch (bookingError: any) {
             console.error("Booking error:", bookingError);
-            fullResponse = language === "nl"
-              ? "Er is een fout opgetreden bij het boeken. Probeer het opnieuw."
-              : "There was an error booking your appointment. Please try again.";
+            
+            // Check if it's a slot unavailability error
+            if (bookingError.message?.startsWith('SLOT_UNAVAILABLE:')) {
+              const reason = bookingError.message.replace('SLOT_UNAVAILABLE: ', '');
+              fullResponse = language === "nl"
+                ? `Sorry, dit tijdslot is niet beschikbaar. ${reason} Kies alstublieft een ander tijdstip.`
+                : `Sorry, this time slot is not available. ${reason} Please choose a different time.`;
+            } else {
+              fullResponse = language === "nl"
+                ? "Er is een fout opgetreden bij het boeken. Probeer het opnieuw."
+                : "There was an error booking your appointment. Please try again.";
+            }
           }
         }
       } else {
