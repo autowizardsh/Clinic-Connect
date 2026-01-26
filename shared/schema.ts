@@ -76,15 +76,16 @@ export type Appointment = typeof appointments.$inferSelect;
 export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
 
 // ============================================
-// DOCTOR AVAILABILITY
+// DOCTOR AVAILABILITY (Date-specific)
 // ============================================
 export const doctorAvailability = pgTable("doctor_availability", {
   id: serial("id").primaryKey(),
   doctorId: integer("doctor_id").notNull().references(() => doctors.id),
-  dayOfWeek: integer("day_of_week").notNull(), // 0-6 (Sunday-Saturday)
+  date: varchar("date", { length: 10 }).notNull(), // YYYY-MM-DD format
   startTime: time("start_time").notNull(),
   endTime: time("end_time").notNull(),
-  isAvailable: boolean("is_available").default(true).notNull(),
+  isAvailable: boolean("is_available").default(false).notNull(), // false = blocked/unavailable
+  reason: text("reason"), // Optional reason for unavailability
 });
 
 export const insertDoctorAvailabilitySchema = createInsertSchema(doctorAvailability).omit({
