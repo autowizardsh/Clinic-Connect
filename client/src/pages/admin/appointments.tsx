@@ -51,11 +51,11 @@ export default function AdminAppointments() {
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const dateTime = new Date(`${data.date}T${data.time}`);
       const response = await apiRequest("POST", "/api/admin/appointments", {
         doctorId: parseInt(data.doctorId),
         patientId: parseInt(data.patientId),
-        date: dateTime.toISOString(),
+        date: data.date,
+        time: data.time,
         service: data.service,
         notes: data.notes,
         source: "admin",

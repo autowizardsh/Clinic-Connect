@@ -217,15 +217,25 @@ export async function registerRoutes(
 
   app.post("/api/admin/appointments", requireAdmin, async (req, res) => {
     try {
-      const { doctorId, patientId, date, service, notes, source } = req.body;
+      const { doctorId, patientId, date, time, service, notes, source } = req.body;
       
       // Validate required fields
       if (!doctorId || !patientId || !date || !service) {
         return res.status(400).json({ error: "Missing required fields" });
       }
       
-      // Parse the date string to Date object
-      const appointmentDate = new Date(date);
+      // Parse the date and time - handle both formats:
+      // 1. Separate date (YYYY-MM-DD) and time (HH:MM)
+      // 2. Combined ISO string
+      let appointmentDate: Date;
+      if (time) {
+        // Separate date and time fields - create date in local context
+        appointmentDate = new Date(`${date}T${time}:00`);
+      } else {
+        // Already a combined date string
+        appointmentDate = new Date(date);
+      }
+      
       if (isNaN(appointmentDate.getTime())) {
         return res.status(400).json({ error: "Invalid date format" });
       }
