@@ -1010,7 +1010,7 @@ Keep responses concise, professional, and helpful.`;
 
       // First call: Check if AI wants to book
       const initialResponse = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
           ...conversationHistory,
