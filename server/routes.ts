@@ -1280,6 +1280,11 @@ STYLE RULES:
         },
       };
 
+      // Set streaming headers early
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
       // First call: Check if AI wants to book
       const initialResponse = await openai.chat.completions.create({
         model: "gpt-4o",
@@ -1536,15 +1541,32 @@ STYLE RULES:
               ],
             });
 
-            fullResponse =
+            const confirmationContent =
               confirmationResponse.choices[0]?.message?.content ||
               (language === "nl"
                 ? `Uw afspraak is geboekt! Afspraak voor ${bookingData.service} met Dr. ${bookingData.doctorName} op ${bookingData.date} om ${bookingData.time}.`
                 : `Your appointment is booked! Appointment for ${bookingData.service} with Dr. ${bookingData.doctorName} on ${bookingData.date} at ${bookingData.time}.`);
+            
+            // Stream the confirmation message with typing effect
+            const chunkSize = 3;
+            for (let i = 0; i < confirmationContent.length; i += chunkSize) {
+              const chunk = confirmationContent.slice(i, i + chunkSize);
+              res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+              await new Promise(resolve => setTimeout(resolve, 15));
+            }
+            fullResponse = confirmationContent;
+            
+            // Store assistant response
+            await storage.createChatMessage({
+              sessionId,
+              role: "assistant",
+              content: fullResponse,
+            });
           } catch (bookingError: any) {
             console.error("Booking error:", bookingError);
 
             // Check if it's a slot unavailability error with alternatives
+            let errorMessage = "";
             if (
               bookingError.message?.startsWith(
                 "SLOT_UNAVAILABLE_WITH_ALTERNATIVES:",
@@ -1554,7 +1576,7 @@ STYLE RULES:
                 "SLOT_UNAVAILABLE_WITH_ALTERNATIVES: ",
                 "",
               );
-              fullResponse =
+              errorMessage =
                 language === "nl"
                   ? `Sorry, dit tijdslot is al geboekt. ${reason}. Wilt u een van deze tijden boeken?`
                   : `Sorry, this time slot is already booked. ${reason}. Would you like to book one of these times?`;
@@ -1563,38 +1585,55 @@ STYLE RULES:
                 "SLOT_UNAVAILABLE: ",
                 "",
               );
-              fullResponse =
+              errorMessage =
                 language === "nl"
                   ? `Sorry, dit tijdslot is niet beschikbaar. ${reason} Kies alstublieft een ander tijdstip.`
                   : `Sorry, this time slot is not available. ${reason} Please choose a different time.`;
             } else {
-              fullResponse =
+              errorMessage =
                 language === "nl"
                   ? "Er is een fout opgetreden bij het boeken. Probeer het opnieuw."
                   : "There was an error booking your appointment. Please try again.";
             }
+            
+            // Stream the error message with typing effect
+            const chunkSize = 3;
+            for (let i = 0; i < errorMessage.length; i += chunkSize) {
+              const chunk = errorMessage.slice(i, i + chunkSize);
+              res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+              await new Promise(resolve => setTimeout(resolve, 15));
+            }
+            fullResponse = errorMessage;
+            
+            // Store error response
+            await storage.createChatMessage({
+              sessionId,
+              role: "assistant",
+              content: fullResponse,
+            });
           }
         }
       } else {
-        // No function call, use the regular response
-        fullResponse = responseMessage?.content || "";
-      }
-
-      // Set headers for response
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
-
-      // Send response
-      if (fullResponse) {
-        res.write(`data: ${JSON.stringify({ content: fullResponse })}\n\n`);
-
-        // Store assistant response
-        await storage.createChatMessage({
-          sessionId,
-          role: "assistant",
-          content: fullResponse,
-        });
+        // No function call - stream the response character by character for a typing effect
+        const content = responseMessage?.content || "";
+        if (content) {
+          // Stream in small chunks for typing effect
+          const chunkSize = 3; // characters per chunk
+          for (let i = 0; i < content.length; i += chunkSize) {
+            const chunk = content.slice(i, i + chunkSize);
+            res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+            // Small delay between chunks for natural typing feel (non-blocking)
+            await new Promise(resolve => setTimeout(resolve, 15));
+          }
+          fullResponse = content;
+          
+          // Store assistant response
+          await storage.createChatMessage({
+            sessionId,
+            role: "assistant",
+            content: fullResponse,
+          });
+        }
       }
 
       // Send booking result if available
