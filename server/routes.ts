@@ -1649,6 +1649,230 @@ STYLE RULES:
     }
   });
 
+  // Non-streaming chat endpoint for WhatsApp/external integrations
+  app.post("/api/chat/message-simple", async (req, res) => {
+    try {
+      const { sessionId, message, language = "en" } = req.body;
+
+      if (!sessionId || !message) {
+        return res.status(400).json({ error: "Session ID and message required" });
+      }
+
+      // Store user message
+      await storage.createChatMessage({
+        sessionId,
+        role: "user",
+        content: message,
+      });
+
+      // Get context
+      const [settings, doctors, previousMessages] = await Promise.all([
+        storage.getClinicSettings(),
+        storage.getDoctors(),
+        storage.getChatMessages(sessionId),
+      ]);
+
+      const activeDoctors = doctors.filter((d) => d.isActive);
+      const services = settings?.services || ["General Checkup", "Teeth Cleaning"];
+      const now = new Date();
+      const formatLocalDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const today = formatLocalDate(now);
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const dayAfterTomorrow = new Date(now);
+      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+      const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const currentDayOfWeek = now.getDay();
+
+      const systemPrompt = language === "nl"
+        ? `Je bent een warme, behulpzame receptionist voor ${settings?.clinicName || "de tandartskliniek"}. 
+Praat natuurlijk. Wees beknopt maar vriendelijk.
+
+DATUMCONTEXT:
+- Vandaag: ${today}
+- "morgen" = ${formatLocalDate(tomorrow)}
+
+KLINIEKINFO:
+Diensten: ${services.join(", ")}
+Tandartsen: ${activeDoctors.map((d) => `Dr. ${d.name} (ID: ${d.id})`).join("; ") || "Neem contact op"}
+Open: ${settings?.openTime || "09:00"} - ${settings?.closeTime || "17:00"}
+
+STIJLREGELS:
+- Geen emoji's, geen opmaak
+- Kort en bondig`
+        : `You are a warm, helpful receptionist for ${settings?.clinicName || "the dental clinic"}. 
+Talk naturally. Be concise but friendly.
+
+DATE CONTEXT:
+- Today: ${dayNames[currentDayOfWeek]}, ${today}
+- "tomorrow" = ${formatLocalDate(tomorrow)}
+
+CLINIC INFO:
+Services: ${services.join(", ")}
+Dentists: ${activeDoctors.map((d) => `Dr. ${d.name} (ID: ${d.id})`).join("; ") || "Contact us"}
+Hours: ${settings?.openTime || "09:00"} - ${settings?.closeTime || "17:00"}
+
+STYLE RULES:
+- No emojis, no markdown formatting
+- Keep responses short`;
+
+      const conversationHistory = previousMessages
+        .slice(-10)
+        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+      // Booking function definition
+      const bookingFunction = {
+        type: "function" as const,
+        function: {
+          name: "book_appointment",
+          description: "Book a dental appointment for a patient.",
+          parameters: {
+            type: "object",
+            properties: {
+              patientName: { type: "string" },
+              patientPhone: { type: "string" },
+              patientEmail: { type: "string" },
+              service: { type: "string" },
+              doctorId: { type: "number" },
+              doctorName: { type: "string" },
+              date: { type: "string", description: "YYYY-MM-DD format" },
+              time: { type: "string", description: "HH:MM format" },
+              notes: { type: "string" },
+            },
+            required: ["patientName", "patientPhone", "service", "doctorId", "date", "time"],
+          },
+        },
+      };
+
+      const initialResponse = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...conversationHistory,
+          { role: "user", content: message },
+        ],
+        tools: [bookingFunction],
+        tool_choice: "auto",
+      });
+
+      const responseMessage = initialResponse.choices[0]?.message;
+      let fullResponse = "";
+      let bookingResult = null;
+
+      if (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0) {
+        const toolCall = responseMessage.tool_calls[0] as { id: string; function: { name: string; arguments: string } };
+        
+        if (toolCall.function?.name === "book_appointment") {
+          try {
+            const bookingData = JSON.parse(toolCall.function.arguments);
+            const appointmentDateTime = new Date(`${bookingData.date}T${bookingData.time}:00`);
+            const appointmentDuration = settings?.appointmentDuration || 30;
+
+            // Check availability and conflicts (simplified)
+            const existingAppointments = await storage.getAppointmentsByDoctorId(bookingData.doctorId);
+            const hasConflict = existingAppointments.some((apt) => {
+              if (apt.status === "cancelled") return false;
+              const aptStart = new Date(apt.date).getTime();
+              const aptEnd = aptStart + apt.duration * 60 * 1000;
+              const newStart = appointmentDateTime.getTime();
+              const newEnd = newStart + appointmentDuration * 60 * 1000;
+              return newStart < aptEnd && newEnd > aptStart;
+            });
+
+            if (hasConflict) {
+              fullResponse = language === "nl"
+                ? "Sorry, dit tijdslot is al geboekt. Kies alstublieft een ander tijdstip."
+                : "Sorry, this time slot is already booked. Please choose a different time.";
+            } else {
+              // Create patient and appointment
+              let patient = await storage.getPatientByPhone(bookingData.patientPhone);
+              if (!patient) {
+                patient = await storage.createPatient({
+                  name: bookingData.patientName,
+                  phone: bookingData.patientPhone,
+                  email: bookingData.patientEmail || null,
+                  notes: `Booked via WhatsApp on ${new Date().toLocaleDateString()}`,
+                });
+              }
+
+              const appointment = await storage.createAppointment({
+                patientId: patient.id,
+                doctorId: bookingData.doctorId,
+                date: appointmentDateTime,
+                duration: appointmentDuration,
+                status: "scheduled",
+                service: bookingData.service,
+                notes: bookingData.notes || null,
+                source: "whatsapp",
+              });
+
+              // Sync to Google Calendar if connected
+              try {
+                const doctor = await storage.getDoctorById(bookingData.doctorId);
+                if (doctor?.googleRefreshToken) {
+                  const event = await createCalendarEvent(
+                    doctor.googleRefreshToken,
+                    doctor.googleCalendarId || "primary",
+                    {
+                      patientName: bookingData.patientName,
+                      doctorName: doctor.name,
+                      date: bookingData.date,
+                      time: bookingData.time,
+                      service: bookingData.service,
+                      duration: appointmentDuration,
+                    },
+                    "Europe/Amsterdam"
+                  );
+                  await storage.updateAppointment(appointment.id, { googleEventId: event.id });
+                }
+              } catch (e) {
+                console.error("Calendar sync failed:", e);
+              }
+
+              bookingResult = {
+                success: true,
+                appointmentId: appointment.id,
+                patientName: bookingData.patientName,
+                doctorName: bookingData.doctorName,
+                date: bookingData.date,
+                time: bookingData.time,
+                service: bookingData.service,
+              };
+
+              fullResponse = language === "nl"
+                ? `Uw afspraak is geboekt! ${bookingData.service} met Dr. ${bookingData.doctorName} op ${bookingData.date} om ${bookingData.time}.`
+                : `Your appointment is booked! ${bookingData.service} with Dr. ${bookingData.doctorName} on ${bookingData.date} at ${bookingData.time}.`;
+            }
+          } catch (error: any) {
+            console.error("Booking error:", error);
+            fullResponse = language === "nl"
+              ? "Er is een fout opgetreden bij het boeken. Probeer het opnieuw."
+              : "There was an error booking your appointment. Please try again.";
+          }
+        }
+      } else {
+        fullResponse = responseMessage?.content || "";
+      }
+
+      // Store assistant response
+      if (fullResponse) {
+        await storage.createChatMessage({
+          sessionId,
+          role: "assistant",
+          content: fullResponse,
+        });
+      }
+
+      res.json({
+        response: fullResponse,
+        booking: bookingResult,
+      });
+    } catch (error) {
+      console.error("Error processing simple chat message:", error);
+      res.status(500).json({ error: "Failed to process message" });
+    }
+  });
+
   // Public endpoint to get available slots
   app.get("/api/public/doctors", async (req, res) => {
     try {
