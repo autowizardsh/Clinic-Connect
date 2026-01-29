@@ -1171,15 +1171,19 @@ BELANGRIJK - BESCHIKBAARHEID CONTROLEREN:
 - Gis NOOIT beschikbaarheid op basis van openingstijden - tandartsen kunnen tijdsloten geblokkeerd hebben
 - Als iemand vraagt "is Dr X beschikbaar op [datum]?" - roep eerst check_availability aan
 
-BOEKINGSSTROOM (volg deze volgorde):
+BOEKINGSSTROOM (volg deze volgorde STRIKT):
 1. Begroet vriendelijk en vraag hoe je kunt helpen
 2. Bij afspraakverzoek: noem de diensten en vraag welke ze nodig hebben
 3. Beveel een geschikte tandarts aan op basis van hun keuze
 4. Vraag wanneer ze willen komen
 5. Roep check_availability aan om beschikbare tijdsloten te krijgen - bevestig of bied alternatieven
-6. Verzamel naam, telefoon en e-mail
-7. Vat samen en vraag bevestiging
-8. Boek pas na bevestiging
+6. Vraag naar hun volledige naam (VERPLICHT voor boeking)
+7. Vraag naar hun telefoonnummer (VERPLICHT voor boeking)
+8. Vraag optioneel naar e-mail
+9. Vat alle details samen en vraag bevestiging
+10. Roep ALLEEN book_appointment aan nadat je naam EN telefoon hebt - NOOIT placeholders gebruiken
+
+KRITIEK: Boek nooit zonder echte naam en telefoonnummer. Als ze deze niet hebben gegeven, VRAAG ernaar.
 
 STIJLREGELS:
 - Praat natuurlijk, niet als een robot. Varieer je bewoordingen.
@@ -1207,15 +1211,19 @@ IMPORTANT - AVAILABILITY CHECKING:
 - NEVER guess availability based on clinic hours - doctors may have blocked time slots
 - When someone asks "is Dr X available on [date]?" - call check_availability first
 
-BOOKING FLOW (follow this order):
+BOOKING FLOW (follow this order STRICTLY):
 1. Greet warmly and ask how you can help
 2. When they want to book: mention services and ask which they need
 3. Recommend a suitable dentist based on their choice
 4. Ask when they would like to come in
 5. Call check_availability to get actual available slots - then confirm or offer alternatives
-6. Collect name, phone, and email
-7. Summarize and ask for confirmation
-8. Only book after they confirm
+6. Ask for their full name (REQUIRED before booking)
+7. Ask for their phone number (REQUIRED before booking)
+8. Optionally ask for email
+9. Summarize all details and ask for confirmation
+10. ONLY call book_appointment after you have collected name AND phone - NEVER use placeholders
+
+CRITICAL: Never book without real patient name and phone number. If they haven't provided these, ASK for them.
 
 STYLE RULES:
 - Talk naturally, not robotic. Vary your wording each time.
@@ -1261,17 +1269,17 @@ STYLE RULES:
         function: {
           name: "book_appointment",
           description:
-            "Book a dental appointment for a patient. Call this when you have collected all required information: patient name, phone number, service, date, time, and doctor. Make sure to call check_availability first to verify the slot is available.",
+            "Book a dental appointment ONLY after collecting ALL required information from the patient. DO NOT call this function until you have explicitly asked for and received: 1) patient's REAL full name (first and last), 2) patient's REAL phone number, 3) preferred service, 4) preferred date and time. NEVER use placeholder values like 'pending' or 'unknown'. If any information is missing, ask for it first instead of calling this function.",
           parameters: {
             type: "object",
             properties: {
               patientName: {
                 type: "string",
-                description: "Full name of the patient",
+                description: "Patient's REAL full name (first and last name) - NEVER use placeholder like 'pending'",
               },
               patientPhone: {
                 type: "string",
-                description: "Phone number of the patient",
+                description: "Patient's REAL phone number - NEVER use placeholder like 'unknown'",
               },
               patientEmail: {
                 type: "string",
@@ -1466,6 +1474,32 @@ STYLE RULES:
           try {
             const bookingData = JSON.parse(toolCall.function.arguments);
             console.log("Booking appointment:", bookingData);
+
+            // CRITICAL: Validate patient information is real, not placeholder
+            const invalidNames = ["pending", "unknown", "test", "user", "patient", "name", "n/a", "na", "tbd", "to be determined"];
+            const patientName = (bookingData.patientName || "").trim().toLowerCase();
+            const patientPhone = (bookingData.patientPhone || "").trim();
+            
+            // Check for invalid/placeholder names
+            if (!bookingData.patientName || patientName.length < 2) {
+              throw new Error("MISSING_INFO: I need your full name to book the appointment. What is your name?");
+            }
+            
+            const nameParts = patientName.split(/\s+/);
+            if (nameParts.some(part => invalidNames.includes(part)) || 
+                (nameParts.length >= 2 && nameParts[0] === nameParts[1])) {
+              throw new Error("MISSING_INFO: I need your real full name to book the appointment. Could you please tell me your name?");
+            }
+            
+            // Check for invalid/placeholder phone numbers
+            if (!patientPhone || patientPhone.length < 6) {
+              throw new Error("MISSING_INFO: I need your phone number to book the appointment. What is your phone number?");
+            }
+            
+            const invalidPhones = ["0000000", "1234567", "pending", "unknown", "test", "n/a", "na", "tbd"];
+            if (invalidPhones.some(p => patientPhone.toLowerCase().includes(p))) {
+              throw new Error("MISSING_INFO: I need a valid phone number to book the appointment. What is your phone number?");
+            }
 
             // Parse date and time
             const appointmentDateTime = new Date(
@@ -2032,6 +2066,31 @@ STYLE RULES:
         if (toolCall.function?.name === "book_appointment") {
           try {
             const bookingData = JSON.parse(toolCall.function.arguments);
+
+            // CRITICAL: Validate patient information is real, not placeholder
+            const invalidNames = ["pending", "unknown", "test", "user", "patient", "name", "n/a", "na", "tbd", "to be determined"];
+            const patientNameLower = (bookingData.patientName || "").trim().toLowerCase();
+            const patientPhoneVal = (bookingData.patientPhone || "").trim();
+            
+            if (!bookingData.patientName || patientNameLower.length < 2) {
+              throw new Error("MISSING_INFO: I need your full name to book the appointment. What is your name?");
+            }
+            
+            const namePartsCheck = patientNameLower.split(/\s+/);
+            if (namePartsCheck.some(part => invalidNames.includes(part)) || 
+                (namePartsCheck.length >= 2 && namePartsCheck[0] === namePartsCheck[1])) {
+              throw new Error("MISSING_INFO: I need your real full name to book the appointment. Could you please tell me your name?");
+            }
+            
+            if (!patientPhoneVal || patientPhoneVal.length < 6) {
+              throw new Error("MISSING_INFO: I need your phone number to book the appointment. What is your phone number?");
+            }
+            
+            const invalidPhonesCheck = ["0000000", "1234567", "pending", "unknown", "test", "n/a", "na", "tbd"];
+            if (invalidPhonesCheck.some(p => patientPhoneVal.toLowerCase().includes(p))) {
+              throw new Error("MISSING_INFO: I need a valid phone number to book the appointment. What is your phone number?");
+            }
+
             const appointmentDateTime = new Date(`${bookingData.date}T${bookingData.time}:00`);
             const appointmentDuration = settings?.appointmentDuration || 30;
 
