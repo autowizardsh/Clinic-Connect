@@ -1166,12 +1166,17 @@ Diensten: ${services.join(", ")}
 Tandartsen: ${activeDoctors.map((d) => `Dr. ${d.name} (ID: ${d.id}, ${d.specialty})`).join("; ") || "Neem contact op"}
 Open: ${settings?.openTime || "09:00"} - ${settings?.closeTime || "17:00"}, ma-za
 
+BELANGRIJK - BESCHIKBAARHEID CONTROLEREN:
+- Roep ALTIJD check_availability aan voordat je een patient vertelt wanneer een tandarts beschikbaar is
+- Gis NOOIT beschikbaarheid op basis van openingstijden - tandartsen kunnen tijdsloten geblokkeerd hebben
+- Als iemand vraagt "is Dr X beschikbaar op [datum]?" - roep eerst check_availability aan
+
 BOEKINGSSTROOM (volg deze volgorde):
 1. Begroet vriendelijk en vraag hoe je kunt helpen
 2. Bij afspraakverzoek: noem de diensten en vraag welke ze nodig hebben
 3. Beveel een geschikte tandarts aan op basis van hun keuze
 4. Vraag wanneer ze willen komen
-5. Controleer beschikbaarheid - bevestig of bied alternatieven
+5. Roep check_availability aan om beschikbare tijdsloten te krijgen - bevestig of bied alternatieven
 6. Verzamel naam, telefoon en e-mail
 7. Vat samen en vraag bevestiging
 8. Boek pas na bevestiging
@@ -1197,12 +1202,17 @@ Services: ${services.join(", ")}
 Dentists: ${activeDoctors.map((d) => `Dr. ${d.name} (ID: ${d.id}, ${d.specialty})`).join("; ") || "Contact us"}
 Hours: ${settings?.openTime || "09:00"} - ${settings?.closeTime || "17:00"}, Mon-Sat
 
+IMPORTANT - AVAILABILITY CHECKING:
+- ALWAYS call check_availability before telling a patient when a doctor is available
+- NEVER guess availability based on clinic hours - doctors may have blocked time slots
+- When someone asks "is Dr X available on [date]?" - call check_availability first
+
 BOOKING FLOW (follow this order):
 1. Greet warmly and ask how you can help
 2. When they want to book: mention services and ask which they need
 3. Recommend a suitable dentist based on their choice
 4. Ask when they would like to come in
-5. Check availability - confirm the slot or offer alternatives
+5. Call check_availability to get actual available slots - then confirm or offer alternatives
 6. Collect name, phone, and email
 7. Summarize and ask for confirmation
 8. Only book after they confirm
@@ -1221,13 +1231,37 @@ STYLE RULES:
         content: m.content,
       }));
 
+      // Define the check_availability function for OpenAI
+      const checkAvailabilityFunction = {
+        type: "function" as const,
+        function: {
+          name: "check_availability",
+          description:
+            "Check if a doctor is available on a specific date. ALWAYS call this function before telling a patient about availability or before booking. This returns the actual available time slots.",
+          parameters: {
+            type: "object",
+            properties: {
+              doctorId: {
+                type: "number",
+                description: "ID of the doctor to check",
+              },
+              date: {
+                type: "string",
+                description: "Date to check in YYYY-MM-DD format",
+              },
+            },
+            required: ["doctorId", "date"],
+          },
+        },
+      };
+
       // Define the booking function for OpenAI
       const bookingFunction = {
         type: "function" as const,
         function: {
           name: "book_appointment",
           description:
-            "Book a dental appointment for a patient. Call this when you have collected all required information: patient name, phone number, service, date, time, and doctor.",
+            "Book a dental appointment for a patient. Call this when you have collected all required information: patient name, phone number, service, date, time, and doctor. Make sure to call check_availability first to verify the slot is available.",
           parameters: {
             type: "object",
             properties: {
@@ -1280,26 +1314,143 @@ STYLE RULES:
         },
       };
 
+      // Helper function to get available slots for a doctor on a date
+      async function getAvailableSlotsForDate(doctorId: number, dateStr: string): Promise<{ available: boolean; slots: string[]; blockedPeriods: string[] }> {
+        const openTime = settings?.openTime || "09:00";
+        const closeTime = settings?.closeTime || "17:00";
+        const [openHour, openMin] = openTime.split(":").map(Number);
+        const [closeHour, closeMin] = closeTime.split(":").map(Number);
+        const openMinutes = openHour * 60 + openMin;
+        const closeMinutes = closeHour * 60 + closeMin;
+        const duration = settings?.appointmentDuration || 30;
+
+        // Get blocked periods for this date
+        const doctorUnavailability = await storage.getDoctorAvailabilityForDate(doctorId, dateStr);
+        const blockedPeriods: string[] = [];
+        const blockedRanges: { start: number; end: number }[] = [];
+        
+        for (const block of doctorUnavailability) {
+          if (!block.isAvailable) {
+            blockedPeriods.push(`${block.startTime} - ${block.endTime}`);
+            const [startH, startM] = block.startTime.split(":").map(Number);
+            const [endH, endM] = block.endTime.split(":").map(Number);
+            blockedRanges.push({ start: startH * 60 + startM, end: endH * 60 + endM });
+          }
+        }
+
+        // Get existing appointments for this doctor on this date
+        const allAppointments = await storage.getAppointmentsByDoctorId(doctorId);
+        const checkDateStart = new Date(`${dateStr}T00:00:00`);
+        const checkDateEnd = new Date(`${dateStr}T23:59:59`);
+        const bookedRanges: { start: number; end: number }[] = [];
+
+        for (const apt of allAppointments) {
+          if (apt.status === "cancelled") continue;
+          const aptDate = new Date(apt.date);
+          if (aptDate >= checkDateStart && aptDate <= checkDateEnd) {
+            const aptMinutes = aptDate.getHours() * 60 + aptDate.getMinutes();
+            bookedRanges.push({ start: aptMinutes, end: aptMinutes + apt.duration });
+          }
+        }
+
+        // Find available slots
+        const availableSlots: string[] = [];
+        for (let time = openMinutes; time + duration <= closeMinutes; time += 30) {
+          const slotEnd = time + duration;
+          
+          // Check if slot overlaps with any blocked period
+          const isBlocked = blockedRanges.some(range => time < range.end && slotEnd > range.start);
+          if (isBlocked) continue;
+
+          // Check if slot overlaps with any existing appointment
+          const isBooked = bookedRanges.some(range => time < range.end && slotEnd > range.start);
+          if (isBooked) continue;
+
+          const hours = Math.floor(time / 60);
+          const mins = time % 60;
+          availableSlots.push(`${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`);
+        }
+
+        return {
+          available: availableSlots.length > 0,
+          slots: availableSlots,
+          blockedPeriods,
+        };
+      }
+
       // Set streaming headers early
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      // First call: Check if AI wants to book
-      const initialResponse = await openai.chat.completions.create({
+      // First call: Check if AI wants to check availability or book
+      let currentMessages: any[] = [
+        { role: "system", content: systemPrompt },
+        ...conversationHistory,
+        { role: "user", content: message },
+      ];
+      
+      let initialResponse = await openai.chat.completions.create({
         model: "gpt-4o",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...conversationHistory,
-          { role: "user", content: message },
-        ],
-        tools: [bookingFunction],
+        messages: currentMessages,
+        tools: [checkAvailabilityFunction, bookingFunction],
         tool_choice: "auto",
       });
 
-      const responseMessage = initialResponse.choices[0]?.message;
+      let responseMessage = initialResponse.choices[0]?.message;
       let fullResponse = "";
       let bookingResult = null;
+
+      // Handle check_availability function call first (if any)
+      if (
+        responseMessage?.tool_calls &&
+        responseMessage.tool_calls.length > 0 &&
+        responseMessage.tool_calls[0]?.function?.name === "check_availability"
+      ) {
+        const checkToolCall = responseMessage.tool_calls[0] as {
+          id: string;
+          function: { name: string; arguments: string };
+        };
+        
+        try {
+          const checkData = JSON.parse(checkToolCall.function.arguments);
+          console.log("Checking availability:", checkData);
+          
+          const availability = await getAvailableSlotsForDate(checkData.doctorId, checkData.date);
+          const doctor = activeDoctors.find(d => d.id === checkData.doctorId);
+          const doctorName = doctor?.name || "the doctor";
+          
+          let availabilityInfo = "";
+          if (availability.blockedPeriods.length > 0) {
+            availabilityInfo = `Dr. ${doctorName} is NOT available during: ${availability.blockedPeriods.join(", ")} on ${checkData.date}. `;
+          }
+          if (availability.available) {
+            availabilityInfo += `Available time slots: ${availability.slots.join(", ")}.`;
+          } else {
+            availabilityInfo += `No available slots on ${checkData.date}.`;
+          }
+          
+          // Add tool result and get final response
+          currentMessages.push(responseMessage);
+          currentMessages.push({
+            role: "tool",
+            tool_call_id: checkToolCall.id,
+            content: availabilityInfo,
+          });
+          
+          // Get the AI's response based on availability data
+          const followUpResponse = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: currentMessages,
+            tools: [checkAvailabilityFunction, bookingFunction],
+            tool_choice: "auto",
+          });
+          
+          responseMessage = followUpResponse.choices[0]?.message;
+        } catch (e) {
+          console.error("Error checking availability:", e);
+        }
+      }
 
       // Check if AI called the booking function
       if (
@@ -1697,6 +1848,10 @@ Diensten: ${services.join(", ")}
 Tandartsen: ${activeDoctors.map((d) => `Dr. ${d.name} (ID: ${d.id})`).join("; ") || "Neem contact op"}
 Open: ${settings?.openTime || "09:00"} - ${settings?.closeTime || "17:00"}
 
+BELANGRIJK - BESCHIKBAARHEID:
+- Roep ALTIJD check_availability aan voordat je beschikbaarheid noemt
+- Gis NOOIT beschikbaarheid op basis van openingstijden
+
 STIJLREGELS:
 - Geen emoji's, geen opmaak
 - Kort en bondig`
@@ -1712,6 +1867,10 @@ Services: ${services.join(", ")}
 Dentists: ${activeDoctors.map((d) => `Dr. ${d.name} (ID: ${d.id})`).join("; ") || "Contact us"}
 Hours: ${settings?.openTime || "09:00"} - ${settings?.closeTime || "17:00"}
 
+IMPORTANT - AVAILABILITY:
+- ALWAYS call check_availability before mentioning when a doctor is available
+- NEVER guess availability based on clinic hours
+
 STYLE RULES:
 - No emojis, no markdown formatting
 - Keep responses short`;
@@ -1719,6 +1878,23 @@ STYLE RULES:
       const conversationHistory = previousMessages
         .slice(-10)
         .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+      // Check availability function definition
+      const checkAvailabilityFn = {
+        type: "function" as const,
+        function: {
+          name: "check_availability",
+          description: "Check if a doctor is available on a specific date. ALWAYS call this before telling a patient about availability.",
+          parameters: {
+            type: "object",
+            properties: {
+              doctorId: { type: "number", description: "ID of the doctor to check" },
+              date: { type: "string", description: "Date in YYYY-MM-DD format" },
+            },
+            required: ["doctorId", "date"],
+          },
+        },
+      };
 
       // Booking function definition
       const bookingFunction = {
@@ -1744,20 +1920,111 @@ STYLE RULES:
         },
       };
 
-      const initialResponse = await openai.chat.completions.create({
+      // Helper function to get available slots
+      async function getAvailableSlotsSimple(doctorId: number, dateStr: string): Promise<{ available: boolean; slots: string[]; blockedPeriods: string[] }> {
+        const openTime = settings?.openTime || "09:00";
+        const closeTime = settings?.closeTime || "17:00";
+        const [openHour, openMin] = openTime.split(":").map(Number);
+        const [closeHour, closeMin] = closeTime.split(":").map(Number);
+        const openMinutes = openHour * 60 + openMin;
+        const closeMinutes = closeHour * 60 + closeMin;
+        const duration = settings?.appointmentDuration || 30;
+
+        const doctorUnavailability = await storage.getDoctorAvailabilityForDate(doctorId, dateStr);
+        const blockedPeriods: string[] = [];
+        const blockedRanges: { start: number; end: number }[] = [];
+        
+        for (const block of doctorUnavailability) {
+          if (!block.isAvailable) {
+            blockedPeriods.push(`${block.startTime} - ${block.endTime}`);
+            const [startH, startM] = block.startTime.split(":").map(Number);
+            const [endH, endM] = block.endTime.split(":").map(Number);
+            blockedRanges.push({ start: startH * 60 + startM, end: endH * 60 + endM });
+          }
+        }
+
+        const allAppointments = await storage.getAppointmentsByDoctorId(doctorId);
+        const checkDateStart = new Date(`${dateStr}T00:00:00`);
+        const checkDateEnd = new Date(`${dateStr}T23:59:59`);
+        const bookedRanges: { start: number; end: number }[] = [];
+
+        for (const apt of allAppointments) {
+          if (apt.status === "cancelled") continue;
+          const aptDate = new Date(apt.date);
+          if (aptDate >= checkDateStart && aptDate <= checkDateEnd) {
+            const aptMinutes = aptDate.getHours() * 60 + aptDate.getMinutes();
+            bookedRanges.push({ start: aptMinutes, end: aptMinutes + apt.duration });
+          }
+        }
+
+        const availableSlots: string[] = [];
+        for (let time = openMinutes; time + duration <= closeMinutes; time += 30) {
+          const slotEnd = time + duration;
+          const isBlocked = blockedRanges.some(range => time < range.end && slotEnd > range.start);
+          if (isBlocked) continue;
+          const isBooked = bookedRanges.some(range => time < range.end && slotEnd > range.start);
+          if (isBooked) continue;
+          const hours = Math.floor(time / 60);
+          const mins = time % 60;
+          availableSlots.push(`${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`);
+        }
+
+        return { available: availableSlots.length > 0, slots: availableSlots, blockedPeriods };
+      }
+
+      let currentMessages: any[] = [
+        { role: "system", content: systemPrompt },
+        ...conversationHistory,
+        { role: "user", content: message },
+      ];
+
+      let initialResponse = await openai.chat.completions.create({
         model: "gpt-4o",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...conversationHistory,
-          { role: "user", content: message },
-        ],
-        tools: [bookingFunction],
+        messages: currentMessages,
+        tools: [checkAvailabilityFn, bookingFunction],
         tool_choice: "auto",
       });
 
-      const responseMessage = initialResponse.choices[0]?.message;
+      let responseMessage = initialResponse.choices[0]?.message;
       let fullResponse = "";
       let bookingResult = null;
+
+      // Handle check_availability function call first
+      if (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0 &&
+          responseMessage.tool_calls[0]?.function?.name === "check_availability") {
+        const checkToolCall = responseMessage.tool_calls[0] as { id: string; function: { name: string; arguments: string } };
+        
+        try {
+          const checkData = JSON.parse(checkToolCall.function.arguments);
+          const availability = await getAvailableSlotsSimple(checkData.doctorId, checkData.date);
+          const doctor = activeDoctors.find(d => d.id === checkData.doctorId);
+          const doctorName = doctor?.name || "the doctor";
+          
+          let availabilityInfo = "";
+          if (availability.blockedPeriods.length > 0) {
+            availabilityInfo = `Dr. ${doctorName} is NOT available during: ${availability.blockedPeriods.join(", ")} on ${checkData.date}. `;
+          }
+          if (availability.available) {
+            availabilityInfo += `Available time slots: ${availability.slots.join(", ")}.`;
+          } else {
+            availabilityInfo += `No available slots on ${checkData.date}.`;
+          }
+          
+          currentMessages.push(responseMessage);
+          currentMessages.push({ role: "tool", tool_call_id: checkToolCall.id, content: availabilityInfo });
+          
+          const followUpResponse = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: currentMessages,
+            tools: [checkAvailabilityFn, bookingFunction],
+            tool_choice: "auto",
+          });
+          
+          responseMessage = followUpResponse.choices[0]?.message;
+        } catch (e) {
+          console.error("Error checking availability:", e);
+        }
+      }
 
       if (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0) {
         const toolCall = responseMessage.tool_calls[0] as { id: string; function: { name: string; arguments: string } };
