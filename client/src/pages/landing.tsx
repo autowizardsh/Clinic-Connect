@@ -6,6 +6,7 @@ import { Calendar, MessageSquare, Users, Clock, Shield, Sparkles } from "lucide-
 
 export default function LandingPage() {
   return (
+    <>
     <div className="min-h-screen bg-background">
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b">
@@ -245,7 +246,8 @@ export default function LandingPage() {
         </div>
       </footer>
 
-      <ChatWidget />
     </div>
+    <ChatWidget />
+    </>
   );
 }
