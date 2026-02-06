@@ -1069,7 +1069,7 @@ export async function registerRoutes(
 
     if (hasBookingIntent) {
       const timeSlotMatch = aiResponse.match(/\b(\d{1,2}:\d{2})\b/g);
-      if (timeSlotMatch && timeSlotMatch.length >= 2) {
+      if (timeSlotMatch && timeSlotMatch.length >= 1) {
         const uniqueSlots = [...new Set(timeSlotMatch)];
         return uniqueSlots.slice(0, 6).map(t => ({
           label: t,
