@@ -978,18 +978,15 @@ export async function registerRoutes(
     const activeDoctors = doctors.filter((d) => d.isActive);
     const services = settings?.services || ["General Checkup", "Teeth Cleaning"];
 
-    const hasBookingIntent = fullConversation.includes("book") || fullConversation.includes("appointment") || fullConversation.includes("afspraak") || fullConversation.includes("boek");
+    const hasBookingIntent = fullConversation.includes("book") || fullConversation.includes("appointment") || fullConversation.includes("afspraak") || fullConversation.includes("boek") || fullConversation.includes("schedule");
     const hasSelectedService = services.some(s => fullConversation.includes(s.toLowerCase()));
     const hasSelectedDoctor = activeDoctors.some(d => fullConversation.includes(d.name.toLowerCase()));
 
-    const isAskingService = lowerResponse.includes("service") || lowerResponse.includes("treatment") || lowerResponse.includes("dienst") || lowerResponse.includes("behandeling") || lowerResponse.includes("which type") || lowerResponse.includes("what type") || lowerResponse.includes("welke soort");
-    const isAskingDoctor = lowerResponse.includes("dentist") || lowerResponse.includes("doctor") || (lowerResponse.includes("tandarts") && !lowerResponse.includes("tandartskliniek")) || lowerResponse.includes("prefer") || lowerResponse.includes("voorkeur");
-    const isAskingDate = lowerResponse.includes("when") || lowerResponse.includes("which day") || lowerResponse.includes("what day") || lowerResponse.includes("wanneer") || lowerResponse.includes("welke dag") || lowerResponse.includes("which date") || lowerResponse.includes("what date");
-    const isAskingTime = lowerResponse.includes("time slot") || lowerResponse.includes("which time") || lowerResponse.includes("what time") || lowerResponse.includes("tijdslot") || lowerResponse.includes("welk tijdstip") || lowerResponse.includes("available slot");
-    const isAskingConfirmation = lowerResponse.includes("confirm") || lowerResponse.includes("shall i") || lowerResponse.includes("should i") || lowerResponse.includes("would you like me to book") || lowerResponse.includes("bevestig") || lowerResponse.includes("zal ik");
-    const isBookingComplete = lowerResponse.includes("booked") || lowerResponse.includes("confirmed") || lowerResponse.includes("geboekt") || lowerResponse.includes("bevestigd");
+    const isBookingComplete = lowerResponse.includes("has been booked") || lowerResponse.includes("successfully booked") || lowerResponse.includes("appointment is confirmed") || lowerResponse.includes("is geboekt") || lowerResponse.includes("is bevestigd") || lowerResponse.includes("successfully scheduled");
+
     const isGreeting = (lowerResponse.includes("how can i help") || lowerResponse.includes("hoe kan ik") || lowerResponse.includes("what can i") || lowerResponse.includes("welcome")) && conversationHistory.length <= 2;
 
+    // 1. Booking complete - highest priority
     if (isBookingComplete) {
       return language === "nl"
         ? [
@@ -1002,6 +999,7 @@ export async function registerRoutes(
           ];
     }
 
+    // 2. Initial greeting
     if (isGreeting) {
       return language === "nl"
         ? [
@@ -1018,17 +1016,29 @@ export async function registerRoutes(
           ];
     }
 
-    if (isAskingConfirmation) {
-      return language === "nl"
-        ? [
-            { label: "Ja, bevestig", value: "Ja, bevestig mijn afspraak alstublieft" },
-            { label: "Nee, wijzig", value: "Nee, ik wil iets wijzigen" },
-          ]
-        : [
-            { label: "Yes, confirm", value: "Yes, please confirm my appointment" },
-            { label: "No, change something", value: "No, I want to change something" },
-          ];
+    // 3. Check for time slots mentioned in the response (e.g. after availability check)
+    // This must come BEFORE date/doctor checks because when AI lists times like "09:00, 10:00, 11:00" those should be buttons
+    if (hasBookingIntent) {
+      const timeSlotMatch = aiResponse.match(/\b(\d{1,2}:\d{2})\b/g);
+      if (timeSlotMatch && timeSlotMatch.length >= 1) {
+        const uniqueSlots = [...new Set(timeSlotMatch)];
+        if (uniqueSlots.length >= 1) {
+          return uniqueSlots.slice(0, 6).map(t => ({
+            label: t,
+            value: t,
+          }));
+        }
+      }
     }
+
+    // 4. Asking about services - detect question marks and service-related words
+    const isAskingService = (
+      lowerResponse.includes("service") || lowerResponse.includes("treatment") || 
+      lowerResponse.includes("dienst") || lowerResponse.includes("behandeling") || 
+      lowerResponse.includes("which type") || lowerResponse.includes("what type") || 
+      lowerResponse.includes("welke soort") || lowerResponse.includes("what kind") ||
+      lowerResponse.includes("looking for") || lowerResponse.includes("need help with")
+    ) && !hasSelectedService;
 
     if (isAskingService && hasBookingIntent) {
       return services.map(s => ({
@@ -1037,12 +1047,33 @@ export async function registerRoutes(
       }));
     }
 
+    // 5. Asking about doctors - detect when AI mentions choosing/preferring a doctor
+    const isAskingDoctor = (
+      lowerResponse.includes("which dentist") || lowerResponse.includes("which doctor") ||
+      lowerResponse.includes("prefer") || lowerResponse.includes("preference") ||
+      lowerResponse.includes("welke tandarts") || lowerResponse.includes("voorkeur") ||
+      lowerResponse.includes("recommend") || lowerResponse.includes("would you like to see") ||
+      lowerResponse.includes("wilt u bij") || lowerResponse.includes("specialist") ||
+      (lowerResponse.includes("dr.") && lowerResponse.includes("?"))
+    ) && !hasSelectedDoctor;
+
     if (isAskingDoctor && hasBookingIntent) {
       return activeDoctors.map(d => ({
-        label: `Dr. ${d.name}`,
+        label: `Dr. ${d.name} (${d.specialty})`,
         value: language === "nl" ? `Ik wil graag bij Dr. ${d.name}` : `I'd like Dr. ${d.name}`,
       }));
     }
+
+    // 6. Asking about dates/when to come
+    const isAskingDate = (
+      lowerResponse.includes("when would you") || lowerResponse.includes("which day") || 
+      lowerResponse.includes("what day") || lowerResponse.includes("which date") || 
+      lowerResponse.includes("what date") || lowerResponse.includes("preferred date") ||
+      lowerResponse.includes("wanneer wilt") || lowerResponse.includes("welke dag") ||
+      lowerResponse.includes("welke datum") || lowerResponse.includes("when do you") ||
+      lowerResponse.includes("come in") || lowerResponse.includes("like to visit") ||
+      lowerResponse.includes("when are you") || lowerResponse.includes("schedule for")
+    );
 
     if (isAskingDate && hasBookingIntent) {
       const now = new Date();
@@ -1051,7 +1082,7 @@ export async function registerRoutes(
       const dayNamesNL = ["Zondag", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag"];
       const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
 
-      for (let i = 0; i < 14 && options.length < 4; i++) {
+      for (let i = 0; i < 14 && options.length < 5; i++) {
         const d = new Date(now);
         d.setDate(d.getDate() + i);
         if (!workingDays.includes(d.getDay())) continue;
@@ -1067,15 +1098,37 @@ export async function registerRoutes(
       return options;
     }
 
-    if (hasBookingIntent) {
-      const timeSlotMatch = aiResponse.match(/\b(\d{1,2}:\d{2})\b/g);
-      if (timeSlotMatch && timeSlotMatch.length >= 1) {
-        const uniqueSlots = [...new Set(timeSlotMatch)];
-        return uniqueSlots.slice(0, 6).map(t => ({
-          label: t,
-          value: t,
-        }));
-      }
+    // 7. Confirmation - ONLY when AI explicitly summarizes and asks to confirm
+    // Must be very specific to avoid false positives
+    const isAskingConfirmation = (
+      lowerResponse.includes("shall i book") || lowerResponse.includes("shall i go ahead") ||
+      lowerResponse.includes("should i book") || lowerResponse.includes("should i go ahead") ||
+      lowerResponse.includes("would you like me to book") || lowerResponse.includes("would you like me to confirm") ||
+      lowerResponse.includes("want me to book") || lowerResponse.includes("ready to book") ||
+      lowerResponse.includes("zal ik boeken") || lowerResponse.includes("zal ik de afspraak") ||
+      lowerResponse.includes("wilt u dat ik boek") || lowerResponse.includes("confirm this")
+    );
+
+    if (isAskingConfirmation) {
+      return language === "nl"
+        ? [
+            { label: "Ja, bevestig", value: "Ja, bevestig mijn afspraak alstublieft" },
+            { label: "Nee, wijzig", value: "Nee, ik wil iets wijzigen" },
+          ]
+        : [
+            { label: "Yes, confirm", value: "Yes, please confirm my appointment" },
+            { label: "No, change something", value: "No, I want to change something" },
+          ];
+    }
+
+    // 8. Asking for name or phone - no buttons, user must type
+    const isAskingContactInfo = (
+      lowerResponse.includes("your name") || lowerResponse.includes("full name") ||
+      lowerResponse.includes("phone number") || lowerResponse.includes("uw naam") ||
+      lowerResponse.includes("telefoonnummer") || lowerResponse.includes("your number")
+    );
+    if (isAskingContactInfo) {
+      return [];
     }
 
     return [];
