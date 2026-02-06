@@ -54,6 +54,7 @@ export interface IStorage {
   // Appointments
   getAppointments(): Promise<(Appointment & { doctor: Doctor; patient: Patient })[]>;
   getAppointmentById(id: number): Promise<Appointment | undefined>;
+  getAppointmentByReferenceNumber(referenceNumber: string): Promise<(Appointment & { doctor: Doctor; patient: Patient }) | undefined>;
   getAppointmentsByDoctorId(doctorId: number): Promise<(Appointment & { patient: Patient })[]>;
   getAppointmentsByPatientId(patientId: number): Promise<Appointment[]>;
   getAppointmentsForDate(date: Date): Promise<(Appointment & { doctor: Doctor; patient: Patient })[]>;
@@ -210,6 +211,22 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
+  async getAppointmentByReferenceNumber(referenceNumber: string): Promise<(Appointment & { doctor: Doctor; patient: Patient }) | undefined> {
+    const result = await db
+      .select()
+      .from(appointments)
+      .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .where(eq(appointments.referenceNumber, referenceNumber.toUpperCase()));
+    if (result.length === 0) return undefined;
+    const row = result[0];
+    return {
+      ...row.appointments,
+      doctor: row.doctors!,
+      patient: row.patients!,
+    };
+  }
+
   async getAppointmentsByDoctorId(doctorId: number): Promise<(Appointment & { patient: Patient })[]> {
     const result = await db
       .select()
@@ -253,8 +270,25 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
+  private generateReferenceNumber(): string {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < 4; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `APT-${code}`;
+  }
+
   async createAppointment(appointment: InsertAppointment): Promise<Appointment> {
-    const [result] = await db.insert(appointments).values(appointment).returning();
+    let referenceNumber = this.generateReferenceNumber();
+    let attempts = 0;
+    while (attempts < 10) {
+      const existing = await db.select().from(appointments).where(eq(appointments.referenceNumber, referenceNumber));
+      if (existing.length === 0) break;
+      referenceNumber = this.generateReferenceNumber();
+      attempts++;
+    }
+    const [result] = await db.insert(appointments).values({ ...appointment, referenceNumber }).returning();
     return result;
   }
 

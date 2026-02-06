@@ -56,6 +56,7 @@ export type InsertPatient = z.infer<typeof insertPatientSchema>;
 // ============================================
 export const appointments = pgTable("appointments", {
   id: serial("id").primaryKey(),
+  referenceNumber: varchar("reference_number", { length: 10 }).unique(),
   doctorId: integer("doctor_id").notNull().references(() => doctors.id),
   patientId: integer("patient_id").notNull().references(() => patients.id),
   date: timestamp("date").notNull(),
@@ -70,6 +71,7 @@ export const appointments = pgTable("appointments", {
 
 export const insertAppointmentSchema = createInsertSchema(appointments).omit({
   id: true,
+  referenceNumber: true,
   createdAt: true,
 });
 export type Appointment = typeof appointments.$inferSelect;

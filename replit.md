@@ -6,10 +6,18 @@ DentalAI is an AI-powered receptionist system for dental clinics that automates 
 
 Key capabilities:
 - AI chat widget for patient appointment booking (English & Dutch)
+- Appointment reschedule/cancel via chat with reference number + phone verification
 - Admin dashboard for managing doctors, patients, and appointments
 - Doctor portal for viewing schedules and managing availability
 - Session-based authentication with role-based access control (admin/doctor)
 - OpenAI integration for conversational AI features
+
+### Appointment Reference Numbers
+- Every appointment gets a unique reference number (APT-XXXX) on creation
+- Generated with alphanumeric characters (excluding ambiguous ones like 0/O/1/I/L)
+- Used for secure appointment lookup in reschedule/cancel flows
+- Phone verification required alongside reference number to prevent unauthorized access
+- Reference numbers displayed in admin and doctor appointment cards
 
 ## User Preferences
 

@@ -992,6 +992,61 @@ export async function registerRoutes(
 
     const isGreeting = (lowerResponse.includes("how can i help") || lowerResponse.includes("hoe kan ik") || lowerResponse.includes("what can i") || lowerResponse.includes("welcome")) && conversationHistory.length <= 2;
 
+    // 0. Cancel/reschedule complete
+    const isCancelComplete = lowerResponse.includes("has been cancelled") || lowerResponse.includes("is geannuleerd") || lowerResponse.includes("successfully cancelled") || lowerResponse.includes("is cancelled");
+    const isRescheduleComplete = lowerResponse.includes("has been rescheduled") || lowerResponse.includes("is verzet") || lowerResponse.includes("successfully rescheduled");
+    
+    if (isCancelComplete || isRescheduleComplete) {
+      return language === "nl"
+        ? [
+            { label: "Nieuwe afspraak maken", value: "Ik wil een afspraak maken" },
+            { label: "Andere vraag", value: "Ik heb een andere vraag" },
+          ]
+        : [
+            { label: "Book a new appointment", value: "I would like to book an appointment" },
+            { label: "Other question", value: "I have another question" },
+          ];
+    }
+
+    // 0b. AI asking for cancel/reschedule confirmation
+    const isAskingCancelConfirm = (
+      lowerResponse.includes("cancel this appointment") || lowerResponse.includes("want to cancel") ||
+      lowerResponse.includes("confirm the cancellation") || lowerResponse.includes("sure you want to cancel") ||
+      lowerResponse.includes("wilt u annuleren") || lowerResponse.includes("afspraak annuleren")
+    );
+    
+    if (isAskingCancelConfirm) {
+      return language === "nl"
+        ? [
+            { label: "Ja, annuleer", value: "Ja, annuleer mijn afspraak alstublieft" },
+            { label: "Nee, toch niet", value: "Nee, ik wil mijn afspraak behouden" },
+          ]
+        : [
+            { label: "Yes, cancel it", value: "Yes, please cancel my appointment" },
+            { label: "No, keep it", value: "No, I want to keep my appointment" },
+          ];
+    }
+
+    // 0c. Reschedule intent - detect when AI has found appointment and is discussing reschedule
+    const hasRescheduleIntent = fullConversation.includes("reschedule") || fullConversation.includes("verzetten") || fullConversation.includes("verplaats");
+    const isAskingRescheduleConfirm = (
+      lowerResponse.includes("reschedule to") || lowerResponse.includes("new date") || lowerResponse.includes("new time") ||
+      lowerResponse.includes("shall i reschedule") || lowerResponse.includes("confirm the reschedule") ||
+      lowerResponse.includes("verzetten naar") || lowerResponse.includes("nieuwe datum")
+    );
+    
+    if (isAskingRescheduleConfirm) {
+      return language === "nl"
+        ? [
+            { label: "Ja, verzet het", value: "Ja, verzet mijn afspraak alstublieft" },
+            { label: "Nee, toch niet", value: "Nee, ik wil een andere tijd kiezen" },
+          ]
+        : [
+            { label: "Yes, reschedule it", value: "Yes, please reschedule my appointment" },
+            { label: "No, different time", value: "No, I want to pick a different time" },
+          ];
+    }
+
     // 1. Booking complete - highest priority
     if (isBookingComplete) {
       return language === "nl"
@@ -1127,11 +1182,13 @@ export async function registerRoutes(
           ];
     }
 
-    // 8. Asking for name or phone - no buttons, user must type
+    // 8. Asking for name, phone, or reference number - no buttons, user must type
     const isAskingContactInfo = (
       lowerResponse.includes("your name") || lowerResponse.includes("full name") ||
       lowerResponse.includes("phone number") || lowerResponse.includes("uw naam") ||
-      lowerResponse.includes("telefoonnummer") || lowerResponse.includes("your number")
+      lowerResponse.includes("telefoonnummer") || lowerResponse.includes("your number") ||
+      lowerResponse.includes("reference number") || lowerResponse.includes("referentienummer") ||
+      lowerResponse.includes("booking reference") || lowerResponse.includes("apt-")
     );
     if (isAskingContactInfo) {
       return [];
@@ -1363,6 +1420,14 @@ BOEKINGSSTROOM (volg deze volgorde STRIKT):
 
 KRITIEK: Boek nooit zonder echte naam en telefoonnummer. Als ze deze niet hebben gegeven, VRAAG ernaar.
 
+VERZETTEN/ANNULEREN STROOM:
+- Als de patient een afspraak wil verzetten of annuleren, vraag naar hun referentienummer (bijv. APT-AB12) en telefoonnummer ter verificatie.
+- Roep lookup_appointment aan met het referentienummer en telefoonnummer om de afspraak te vinden en verifiëren.
+- Als de opzoeking slaagt, toon de afspraakdetails en vraag om bevestiging voordat je annuleert of verzet.
+- Voor annuleren: bevestig en roep cancel_appointment aan.
+- Voor verzetten: vraag naar de nieuwe gewenste datum/tijd, controleer beschikbaarheid, bevestig en roep reschedule_appointment aan.
+- Gebruik NOOIT afspraak-ID's of verwijder iets zonder verificatie via het referentienummer EN telefoonnummer.
+
 STIJLREGELS:
 - Praat natuurlijk, niet als een robot. Varieer je bewoordingen.
 - Eén vraag per keer
@@ -1403,6 +1468,14 @@ BOOKING FLOW (follow this order STRICTLY):
 10. ONLY call book_appointment after you have collected name AND phone - NEVER use placeholders
 
 CRITICAL: Never book without real patient name and phone number. If they haven't provided these, ASK for them.
+
+RESCHEDULE/CANCEL FLOW:
+- If the patient wants to reschedule or cancel, ask for their reference number (e.g. APT-AB12) and phone number for verification.
+- Call lookup_appointment with the reference number and phone number to find and verify the appointment.
+- If lookup succeeds, show the appointment details and ask for confirmation before cancelling or rescheduling.
+- For cancel: confirm and call cancel_appointment.
+- For reschedule: ask for new desired date/time, check availability, confirm and call reschedule_appointment.
+- NEVER use appointment IDs or delete anything without verification via reference number AND phone number.
 
 STYLE RULES:
 - Talk naturally, not robotic. Vary your wording each time.
@@ -1502,6 +1575,83 @@ STYLE RULES:
         },
       };
 
+      // Define the lookup_appointment function for OpenAI
+      const lookupAppointmentFunction = {
+        type: "function" as const,
+        function: {
+          name: "lookup_appointment",
+          description: "Look up an existing appointment by its reference number and verify the patient's phone number. Call this FIRST when a patient wants to reschedule or cancel. Returns appointment details if found and phone matches.",
+          parameters: {
+            type: "object",
+            properties: {
+              referenceNumber: {
+                type: "string",
+                description: "The appointment reference number (e.g. APT-AB12)",
+              },
+              phoneNumber: {
+                type: "string",
+                description: "The patient's phone number for verification",
+              },
+            },
+            required: ["referenceNumber", "phoneNumber"],
+          },
+        },
+      };
+
+      // Define the cancel_appointment function for OpenAI
+      const cancelAppointmentFunction = {
+        type: "function" as const,
+        function: {
+          name: "cancel_appointment",
+          description: "Cancel an appointment after it has been verified via lookup_appointment. Only call this AFTER successful lookup and patient confirmation.",
+          parameters: {
+            type: "object",
+            properties: {
+              referenceNumber: {
+                type: "string",
+                description: "The verified appointment reference number",
+              },
+              phoneNumber: {
+                type: "string",
+                description: "The patient's phone number for re-verification",
+              },
+            },
+            required: ["referenceNumber", "phoneNumber"],
+          },
+        },
+      };
+
+      // Define the reschedule_appointment function for OpenAI
+      const rescheduleAppointmentFunction = {
+        type: "function" as const,
+        function: {
+          name: "reschedule_appointment",
+          description: "Reschedule an appointment to a new date and time after it has been verified via lookup_appointment. Only call this AFTER successful lookup, availability check, and patient confirmation.",
+          parameters: {
+            type: "object",
+            properties: {
+              referenceNumber: {
+                type: "string",
+                description: "The verified appointment reference number",
+              },
+              phoneNumber: {
+                type: "string",
+                description: "The patient's phone number for re-verification",
+              },
+              newDate: {
+                type: "string",
+                description: "New appointment date in YYYY-MM-DD format",
+              },
+              newTime: {
+                type: "string",
+                description: "New appointment time in HH:MM format (24-hour)",
+              },
+            },
+            required: ["referenceNumber", "phoneNumber", "newDate", "newTime"],
+          },
+        },
+      };
+
       // Helper function to get available slots for a doctor on a date
       async function getAvailableSlotsForDate(doctorId: number, dateStr: string): Promise<{ available: boolean; slots: string[]; blockedPeriods: string[] }> {
         const openTime = settings?.openTime || "09:00";
@@ -1581,7 +1731,7 @@ STYLE RULES:
       let initialResponse = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: currentMessages,
-        tools: [checkAvailabilityFunction, bookingFunction],
+        tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction],
         tool_choice: "auto",
       });
 
@@ -1630,13 +1780,255 @@ STYLE RULES:
           const followUpResponse = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: currentMessages,
-            tools: [checkAvailabilityFunction, bookingFunction],
+            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction],
             tool_choice: "auto",
           });
           
           responseMessage = followUpResponse.choices[0]?.message;
         } catch (e) {
           console.error("Error checking availability:", e);
+        }
+      }
+
+      // Handle lookup_appointment tool call
+      if (
+        responseMessage?.tool_calls &&
+        responseMessage.tool_calls.length > 0 &&
+        responseMessage.tool_calls[0]?.function?.name === "lookup_appointment"
+      ) {
+        const lookupToolCall = responseMessage.tool_calls[0] as {
+          id: string;
+          function: { name: string; arguments: string };
+        };
+        
+        try {
+          const lookupData = JSON.parse(lookupToolCall.function.arguments);
+          const refNum = (lookupData.referenceNumber || "").toUpperCase().trim();
+          const phone = (lookupData.phoneNumber || "").trim();
+          
+          const appointment = await storage.getAppointmentByReferenceNumber(refNum);
+          
+          let lookupResult = "";
+          if (!appointment) {
+            lookupResult = JSON.stringify({ found: false, error: "No appointment found with this reference number. Please check and try again." });
+          } else if (!appointment.patient.phone || !phone || 
+            appointment.patient.phone.replace(/\D/g, "").slice(-6) !== phone.replace(/\D/g, "").slice(-6)) {
+            lookupResult = JSON.stringify({ found: false, error: "Phone number does not match our records. Please verify your phone number." });
+          } else if (appointment.status === "cancelled") {
+            lookupResult = JSON.stringify({ found: false, error: "This appointment has already been cancelled." });
+          } else {
+            const appointmentDate = new Date(appointment.date);
+            lookupResult = JSON.stringify({
+              found: true,
+              referenceNumber: appointment.referenceNumber,
+              appointmentId: appointment.id,
+              doctorId: appointment.doctorId,
+              doctorName: appointment.doctor.name,
+              patientName: appointment.patient.name,
+              service: appointment.service,
+              date: appointmentDate.toISOString().split("T")[0],
+              time: `${String(appointmentDate.getHours()).padStart(2, "0")}:${String(appointmentDate.getMinutes()).padStart(2, "0")}`,
+              status: appointment.status,
+            });
+          }
+          
+          currentMessages.push(responseMessage);
+          currentMessages.push({
+            role: "tool",
+            tool_call_id: lookupToolCall.id,
+            content: lookupResult,
+          });
+          
+          const lookupFollowUp = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: currentMessages,
+            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction],
+            tool_choice: "auto",
+          });
+          
+          responseMessage = lookupFollowUp.choices[0]?.message;
+        } catch (e) {
+          console.error("Error looking up appointment:", e);
+        }
+      }
+
+      // Handle cancel_appointment tool call
+      if (
+        responseMessage?.tool_calls &&
+        responseMessage.tool_calls.length > 0 &&
+        responseMessage.tool_calls[0]?.function?.name === "cancel_appointment"
+      ) {
+        const cancelToolCall = responseMessage.tool_calls[0] as {
+          id: string;
+          function: { name: string; arguments: string };
+        };
+        
+        try {
+          const cancelData = JSON.parse(cancelToolCall.function.arguments);
+          const refNum = (cancelData.referenceNumber || "").toUpperCase().trim();
+          const phone = (cancelData.phoneNumber || "").trim();
+          
+          const appointment = await storage.getAppointmentByReferenceNumber(refNum);
+          
+          let cancelResult = "";
+          if (!appointment) {
+            cancelResult = JSON.stringify({ success: false, error: "Appointment not found." });
+          } else if (!phone || appointment.patient.phone.replace(/\D/g, "").slice(-6) !== phone.replace(/\D/g, "").slice(-6)) {
+            cancelResult = JSON.stringify({ success: false, error: "Phone verification failed. Cannot cancel." });
+          } else if (appointment.status === "cancelled") {
+            cancelResult = JSON.stringify({ success: false, error: "This appointment is already cancelled." });
+          } else {
+            await storage.updateAppointment(appointment.id, { status: "cancelled" });
+            
+            // Cancel Google Calendar event if exists
+            if (appointment.googleEventId) {
+              try {
+                const doctor = await storage.getDoctorById(appointment.doctorId);
+                if (doctor?.googleRefreshToken) {
+                  const { deleteCalendarEvent } = await import("./google-calendar");
+                  await deleteCalendarEvent(
+                    doctor.googleRefreshToken,
+                    doctor.googleCalendarId || "primary",
+                    appointment.googleEventId
+                  );
+                }
+              } catch (calErr) {
+                console.error("Failed to delete Google Calendar event:", calErr);
+              }
+            }
+            
+            cancelResult = JSON.stringify({
+              success: true,
+              message: `Appointment ${refNum} has been cancelled successfully.`,
+              referenceNumber: refNum,
+            });
+          }
+          
+          currentMessages.push(responseMessage);
+          currentMessages.push({
+            role: "tool",
+            tool_call_id: cancelToolCall.id,
+            content: cancelResult,
+          });
+          
+          const cancelFollowUp = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: currentMessages,
+          });
+          
+          responseMessage = cancelFollowUp.choices[0]?.message;
+        } catch (e) {
+          console.error("Error cancelling appointment:", e);
+        }
+      }
+
+      // Handle reschedule_appointment tool call
+      if (
+        responseMessage?.tool_calls &&
+        responseMessage.tool_calls.length > 0 &&
+        responseMessage.tool_calls[0]?.function?.name === "reschedule_appointment"
+      ) {
+        const rescheduleToolCall = responseMessage.tool_calls[0] as {
+          id: string;
+          function: { name: string; arguments: string };
+        };
+        
+        try {
+          const rescheduleData = JSON.parse(rescheduleToolCall.function.arguments);
+          const refNum = (rescheduleData.referenceNumber || "").toUpperCase().trim();
+          const phone = (rescheduleData.phoneNumber || "").trim();
+          
+          const appointment = await storage.getAppointmentByReferenceNumber(refNum);
+          
+          let rescheduleResult = "";
+          if (!appointment) {
+            rescheduleResult = JSON.stringify({ success: false, error: "Appointment not found." });
+          } else if (!phone || appointment.patient.phone.replace(/\D/g, "").slice(-6) !== phone.replace(/\D/g, "").slice(-6)) {
+            rescheduleResult = JSON.stringify({ success: false, error: "Phone verification failed. Cannot reschedule." });
+          } else if (appointment.status === "cancelled") {
+            rescheduleResult = JSON.stringify({ success: false, error: "Cannot reschedule a cancelled appointment." });
+          } else {
+            const newDateTime = new Date(`${rescheduleData.newDate}T${rescheduleData.newTime}:00`);
+            const now = new Date();
+            
+            if (newDateTime <= now) {
+              rescheduleResult = JSON.stringify({ success: false, error: "Cannot reschedule to a past date/time." });
+            } else {
+              // Check for conflicts
+              const existingAppointments = await storage.getAppointmentsByDoctorId(appointment.doctorId);
+              const duration = appointment.duration || 30;
+              const conflicting = existingAppointments.find((apt) => {
+                if (apt.id === appointment.id || apt.status === "cancelled") return false;
+                const aptStart = new Date(apt.date).getTime();
+                const aptEnd = aptStart + apt.duration * 60 * 1000;
+                const newStart = newDateTime.getTime();
+                const newEnd = newStart + duration * 60 * 1000;
+                return newStart < aptEnd && newEnd > aptStart;
+              });
+              
+              if (conflicting) {
+                rescheduleResult = JSON.stringify({ success: false, error: "The new time slot conflicts with another appointment. Please choose a different time." });
+              } else {
+                const oldDate = new Date(appointment.date);
+                await storage.updateAppointment(appointment.id, { date: newDateTime });
+                
+                // Update Google Calendar event if exists
+                if (appointment.googleEventId) {
+                  try {
+                    const doctor = await storage.getDoctorById(appointment.doctorId);
+                    if (doctor?.googleRefreshToken) {
+                      const { deleteCalendarEvent, createCalendarEvent } = await import("./google-calendar");
+                      await deleteCalendarEvent(
+                        doctor.googleRefreshToken,
+                        doctor.googleCalendarId || "primary",
+                        appointment.googleEventId
+                      );
+                      const event = await createCalendarEvent(
+                        doctor.googleRefreshToken,
+                        doctor.googleCalendarId || "primary",
+                        {
+                          patientName: appointment.patient.name,
+                          doctorName: doctor.name,
+                          date: rescheduleData.newDate,
+                          time: rescheduleData.newTime,
+                          service: appointment.service,
+                          duration: duration,
+                        },
+                        "Europe/Amsterdam"
+                      );
+                      await storage.updateAppointment(appointment.id, { googleEventId: event.id });
+                    }
+                  } catch (calErr) {
+                    console.error("Failed to update Google Calendar event:", calErr);
+                  }
+                }
+                
+                rescheduleResult = JSON.stringify({
+                  success: true,
+                  message: `Appointment ${refNum} has been rescheduled from ${oldDate.toISOString().split("T")[0]} to ${rescheduleData.newDate} at ${rescheduleData.newTime}.`,
+                  referenceNumber: refNum,
+                  newDate: rescheduleData.newDate,
+                  newTime: rescheduleData.newTime,
+                });
+              }
+            }
+          }
+          
+          currentMessages.push(responseMessage);
+          currentMessages.push({
+            role: "tool",
+            tool_call_id: rescheduleToolCall.id,
+            content: rescheduleResult,
+          });
+          
+          const rescheduleFollowUp = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: currentMessages,
+          });
+          
+          responseMessage = rescheduleFollowUp.choices[0]?.message;
+        } catch (e) {
+          console.error("Error rescheduling appointment:", e);
         }
       }
 
@@ -1879,6 +2271,7 @@ STYLE RULES:
             bookingResult = {
               success: true,
               appointmentId: appointment.id,
+              referenceNumber: appointment.referenceNumber,
               patientName: bookingData.patientName,
               doctorName: bookingData.doctorName,
               date: bookingData.date,
@@ -1899,7 +2292,8 @@ STYLE RULES:
                   tool_call_id: toolCall.id,
                   content: JSON.stringify({
                     success: true,
-                    message: `Appointment booked successfully! Appointment ID: ${appointment.id}`,
+                    message: `Appointment booked successfully! Reference number: ${appointment.referenceNumber}`,
+                    referenceNumber: appointment.referenceNumber,
                     details: bookingResult,
                   }),
                 },

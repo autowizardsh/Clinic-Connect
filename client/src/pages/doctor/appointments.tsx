@@ -216,7 +216,14 @@ function AppointmentCard({
             {getSourceIcon(appointment.source)}
             <span className="text-sm text-muted-foreground capitalize">{appointment.source}</span>
           </div>
-          {getStatusBadge(appointment.status)}
+          <div className="flex items-center gap-2">
+            {appointment.referenceNumber && (
+              <Badge variant="outline" data-testid={`badge-ref-${appointment.id}`}>
+                {appointment.referenceNumber}
+              </Badge>
+            )}
+            {getStatusBadge(appointment.status)}
+          </div>
         </div>
         <div className="space-y-3">
           <div>
