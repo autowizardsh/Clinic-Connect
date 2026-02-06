@@ -163,23 +163,24 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
 
   if (!embedded && !isOpen) {
     return (
-      <Button
+      <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-50"
-        size="icon"
+        style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 99999 }}
+        className="h-14 w-14 rounded-full shadow-lg bg-primary text-primary-foreground flex items-center justify-center cursor-pointer border-none outline-none"
         data-testid="button-open-chat"
       >
         <MessageSquare className="h-6 w-6" />
-      </Button>
+      </button>
     );
   }
 
+  const containerStyle = !embedded ? { position: "fixed" as const, bottom: "24px", right: "24px", zIndex: 99999 } : undefined;
   const containerClass = embedded
     ? "w-full h-full flex flex-col bg-background"
-    : "fixed bottom-6 right-6 w-96 h-[32rem] flex flex-col bg-background rounded-2xl shadow-2xl border z-50 overflow-hidden";
+    : "w-96 h-[32rem] flex flex-col bg-background rounded-2xl shadow-2xl border overflow-hidden";
 
   return (
-    <div className={containerClass} data-testid="chat-widget">
+    <div className={containerClass} style={containerStyle} data-testid="chat-widget">
       {/* Header */}
       <div className="bg-primary p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
