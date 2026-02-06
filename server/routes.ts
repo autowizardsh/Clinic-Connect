@@ -979,8 +979,14 @@ export async function registerRoutes(
     const services = settings?.services || ["General Checkup", "Teeth Cleaning"];
 
     const hasBookingIntent = fullConversation.includes("book") || fullConversation.includes("appointment") || fullConversation.includes("afspraak") || fullConversation.includes("boek") || fullConversation.includes("schedule");
-    const hasSelectedService = services.some(s => fullConversation.includes(s.toLowerCase()));
-    const hasSelectedDoctor = activeDoctors.some(d => fullConversation.includes(d.name.toLowerCase()));
+    
+    // Only check USER messages (not AI responses) for whether they already selected a service/doctor
+    const userMessages = conversationHistory
+      .filter(m => m.role === "user")
+      .map(m => m.content.toLowerCase())
+      .join(" ") + " " + lowerMessage;
+    const hasSelectedService = services.some(s => userMessages.includes(s.toLowerCase()));
+    const hasSelectedDoctor = activeDoctors.some(d => userMessages.includes(d.name.toLowerCase()));
 
     const isBookingComplete = lowerResponse.includes("has been booked") || lowerResponse.includes("successfully booked") || lowerResponse.includes("appointment is confirmed") || lowerResponse.includes("is geboekt") || lowerResponse.includes("is bevestigd") || lowerResponse.includes("successfully scheduled");
 
