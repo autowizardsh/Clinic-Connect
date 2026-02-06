@@ -23,6 +23,7 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
   const [sessionId, setSessionId] = useState(propSessionId || "");
   const [language, setLanguage] = useState<"en" | "nl">("en");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -32,10 +33,10 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
   }, [isOpen]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 50);
+  }, [messages, isLoading]);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -256,6 +257,7 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
               </div>
             </div>
           )}
+          <div ref={bottomRef} />
         </div>
       </ScrollArea>
 
