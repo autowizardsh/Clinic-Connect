@@ -106,7 +106,10 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
       content: messageText.trim(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => [
+      ...prev.map((m) => ({ ...m, quickReplies: undefined })),
+      userMessage,
+    ]);
     setInput("");
     setIsLoading(true);
 
@@ -278,38 +281,41 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
       {/* Messages */}
       <ScrollArea className="flex-1 p-4 chat-messages" ref={scrollRef}>
         <div className="space-y-4">
-          {messages.map((message) => (
-            <div key={message.id}>
-              <div
-                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"} chat-message-animate`}
-              >
+          {messages.map((message, msgIndex) => {
+            const isLastAssistant = message.role === "assistant" && msgIndex === messages.length - 1;
+            return (
+              <div key={message.id}>
                 <div
-                  className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                    message.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-tr-none"
-                      : "bg-muted rounded-tl-none"
-                  }`}
-                  data-testid={`message-${message.id}`}
+                  className={`flex ${message.role === "user" ? "justify-end" : "justify-start"} chat-message-animate`}
                 >
-                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  <div
+                    className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                      message.role === "user"
+                        ? "bg-primary text-primary-foreground rounded-tr-none"
+                        : "bg-muted rounded-tl-none"
+                    }`}
+                    data-testid={`message-${message.id}`}
+                  >
+                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  </div>
                 </div>
+                {isLastAssistant && message.quickReplies && message.quickReplies.length > 0 && !isLoading && (
+                  <div className="flex flex-wrap gap-2 mt-2 pl-1">
+                    {message.quickReplies.map((reply, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleQuickReply(reply)}
+                        className="text-sm px-3 py-1.5 rounded-full border border-primary text-primary bg-transparent cursor-pointer transition-colors hover:bg-primary hover:text-primary-foreground"
+                        data-testid={`quick-reply-${idx}`}
+                      >
+                        {reply.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              {message.quickReplies && message.quickReplies.length > 0 && !isLoading && (
-                <div className="flex flex-wrap gap-2 mt-2 pl-1">
-                  {message.quickReplies.map((reply, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleQuickReply(reply)}
-                      className="text-sm px-3 py-1.5 rounded-full border border-primary text-primary bg-transparent cursor-pointer transition-colors hover:bg-primary hover:text-primary-foreground"
-                      data-testid={`quick-reply-${idx}`}
-                    >
-                      {reply.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
           {isLoading && (
             <div className="flex justify-start chat-message-animate">
               <div className="bg-muted rounded-lg rounded-tl-none px-4 py-3">

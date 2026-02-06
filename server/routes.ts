@@ -970,32 +970,35 @@ export async function registerRoutes(
   ): Promise<{ label: string; value: string }[]> {
     const lowerResponse = aiResponse.toLowerCase();
     const lowerMessage = message.toLowerCase();
-    const allMessages = [...conversationHistory.map(m => m.content.toLowerCase()), lowerMessage, lowerResponse];
-    const fullConversation = allMessages.join(" ");
 
     const settings = await storage.getClinicSettings();
     const doctors = await storage.getDoctors();
     const activeDoctors = doctors.filter((d) => d.isActive);
     const services = settings?.services || ["General Checkup", "Teeth Cleaning"];
 
-    const hasBookingIntent = fullConversation.includes("book") || fullConversation.includes("appointment") || fullConversation.includes("afspraak") || fullConversation.includes("boek") || fullConversation.includes("schedule");
-    
-    // Only check USER messages (not AI responses) for whether they already selected a service/doctor
     const userMessages = conversationHistory
       .filter(m => m.role === "user")
-      .map(m => m.content.toLowerCase())
-      .join(" ") + " " + lowerMessage;
-    const hasSelectedService = services.some(s => userMessages.includes(s.toLowerCase()));
-    const hasSelectedDoctor = activeDoctors.some(d => userMessages.includes(d.name.toLowerCase()));
+      .map(m => m.content.toLowerCase());
+    const allUserText = userMessages.join(" ") + " " + lowerMessage;
+    const recentUserText = userMessages.slice(-3).join(" ") + " " + lowerMessage;
 
-    const isBookingComplete = lowerResponse.includes("has been booked") || lowerResponse.includes("successfully booked") || lowerResponse.includes("appointment is confirmed") || lowerResponse.includes("is geboekt") || lowerResponse.includes("is bevestigd") || lowerResponse.includes("successfully scheduled");
+    // === PRIORITY 1: Contact info / typing required — no buttons ===
+    const isAskingContactInfo = (
+      lowerResponse.includes("your name") || lowerResponse.includes("full name") ||
+      lowerResponse.includes("phone number") || lowerResponse.includes("uw naam") ||
+      lowerResponse.includes("telefoonnummer") || lowerResponse.includes("your number") ||
+      lowerResponse.includes("reference number") || lowerResponse.includes("referentienummer") ||
+      lowerResponse.includes("booking reference") || lowerResponse.includes("apt-") ||
+      lowerResponse.includes("email address") || lowerResponse.includes("e-mailadres")
+    );
+    if (isAskingContactInfo) {
+      return [];
+    }
 
-    const isGreeting = (lowerResponse.includes("how can i help") || lowerResponse.includes("hoe kan ik") || lowerResponse.includes("what can i") || lowerResponse.includes("welcome")) && conversationHistory.length <= 2;
-
-    // 0. Cancel/reschedule complete
-    const isCancelComplete = lowerResponse.includes("has been cancelled") || lowerResponse.includes("is geannuleerd") || lowerResponse.includes("successfully cancelled") || lowerResponse.includes("is cancelled");
+    // === PRIORITY 2: Cancel/reschedule completion ===
+    const isCancelComplete = lowerResponse.includes("has been cancelled") || lowerResponse.includes("is geannuleerd") || lowerResponse.includes("successfully cancelled");
     const isRescheduleComplete = lowerResponse.includes("has been rescheduled") || lowerResponse.includes("is verzet") || lowerResponse.includes("successfully rescheduled");
-    
+
     if (isCancelComplete || isRescheduleComplete) {
       return language === "nl"
         ? [
@@ -1008,46 +1011,9 @@ export async function registerRoutes(
           ];
     }
 
-    // 0b. AI asking for cancel/reschedule confirmation
-    const isAskingCancelConfirm = (
-      lowerResponse.includes("cancel this appointment") || lowerResponse.includes("want to cancel") ||
-      lowerResponse.includes("confirm the cancellation") || lowerResponse.includes("sure you want to cancel") ||
-      lowerResponse.includes("wilt u annuleren") || lowerResponse.includes("afspraak annuleren")
-    );
-    
-    if (isAskingCancelConfirm) {
-      return language === "nl"
-        ? [
-            { label: "Ja, annuleer", value: "Ja, annuleer mijn afspraak alstublieft" },
-            { label: "Nee, toch niet", value: "Nee, ik wil mijn afspraak behouden" },
-          ]
-        : [
-            { label: "Yes, cancel it", value: "Yes, please cancel my appointment" },
-            { label: "No, keep it", value: "No, I want to keep my appointment" },
-          ];
-    }
+    // === PRIORITY 3: Booking completion ===
+    const isBookingComplete = lowerResponse.includes("has been booked") || lowerResponse.includes("successfully booked") || lowerResponse.includes("appointment is confirmed") || lowerResponse.includes("is geboekt") || lowerResponse.includes("is bevestigd") || lowerResponse.includes("successfully scheduled");
 
-    // 0c. Reschedule intent - detect when AI has found appointment and is discussing reschedule
-    const hasRescheduleIntent = fullConversation.includes("reschedule") || fullConversation.includes("verzetten") || fullConversation.includes("verplaats");
-    const isAskingRescheduleConfirm = (
-      lowerResponse.includes("reschedule to") || lowerResponse.includes("new date") || lowerResponse.includes("new time") ||
-      lowerResponse.includes("shall i reschedule") || lowerResponse.includes("confirm the reschedule") ||
-      lowerResponse.includes("verzetten naar") || lowerResponse.includes("nieuwe datum")
-    );
-    
-    if (isAskingRescheduleConfirm) {
-      return language === "nl"
-        ? [
-            { label: "Ja, verzet het", value: "Ja, verzet mijn afspraak alstublieft" },
-            { label: "Nee, toch niet", value: "Nee, ik wil een andere tijd kiezen" },
-          ]
-        : [
-            { label: "Yes, reschedule it", value: "Yes, please reschedule my appointment" },
-            { label: "No, different time", value: "No, I want to pick a different time" },
-          ];
-    }
-
-    // 1. Booking complete - highest priority
     if (isBookingComplete) {
       return language === "nl"
         ? [
@@ -1060,107 +1026,47 @@ export async function registerRoutes(
           ];
     }
 
-    // 2. Initial greeting
-    if (isGreeting) {
+    // === PRIORITY 4: Cancel confirmation ===
+    const isAskingCancelConfirm = (
+      lowerResponse.includes("cancel this appointment") || lowerResponse.includes("want to cancel") ||
+      lowerResponse.includes("confirm the cancellation") || lowerResponse.includes("sure you want to cancel") ||
+      lowerResponse.includes("would you like to cancel") || lowerResponse.includes("like me to cancel") ||
+      lowerResponse.includes("wilt u annuleren") || lowerResponse.includes("afspraak annuleren")
+    );
+
+    if (isAskingCancelConfirm) {
       return language === "nl"
         ? [
-            { label: "Afspraak maken", value: "Ik wil een afspraak maken" },
-            { label: "Afspraak verzetten", value: "Ik wil mijn afspraak verzetten" },
-            { label: "Afspraak annuleren", value: "Ik wil mijn afspraak annuleren" },
-            { label: "Andere vraag", value: "Ik heb een andere vraag" },
+            { label: "Ja, annuleer", value: "Ja, annuleer mijn afspraak alstublieft" },
+            { label: "Nee, toch niet", value: "Nee, ik wil mijn afspraak behouden" },
           ]
         : [
-            { label: "Book an appointment", value: "I would like to book an appointment" },
-            { label: "Reschedule appointment", value: "I want to reschedule my appointment" },
-            { label: "Cancel appointment", value: "I want to cancel my appointment" },
-            { label: "Other question", value: "I have another question" },
+            { label: "Yes, cancel it", value: "Yes, please cancel my appointment" },
+            { label: "No, keep it", value: "No, I want to keep my appointment" },
           ];
     }
 
-    // 3. Check for time slots mentioned in the response (e.g. after availability check)
-    // This must come BEFORE date/doctor checks because when AI lists times like "09:00, 10:00, 11:00" those should be buttons
-    if (hasBookingIntent) {
-      const timeSlotMatch = aiResponse.match(/\b(\d{1,2}:\d{2})\b/g);
-      if (timeSlotMatch && timeSlotMatch.length >= 1) {
-        const uniqueSlots = [...new Set(timeSlotMatch)];
-        if (uniqueSlots.length >= 1) {
-          return uniqueSlots.slice(0, 6).map(t => ({
-            label: t,
-            value: t,
-          }));
-        }
-      }
-    }
-
-    // 4. Asking about services - detect question marks and service-related words
-    const isAskingService = (
-      lowerResponse.includes("service") || lowerResponse.includes("treatment") || 
-      lowerResponse.includes("dienst") || lowerResponse.includes("behandeling") || 
-      lowerResponse.includes("which type") || lowerResponse.includes("what type") || 
-      lowerResponse.includes("welke soort") || lowerResponse.includes("what kind") ||
-      lowerResponse.includes("looking for") || lowerResponse.includes("need help with")
-    ) && !hasSelectedService;
-
-    if (isAskingService && hasBookingIntent) {
-      return services.map(s => ({
-        label: s,
-        value: language === "nl" ? `Ik wil graag ${s}` : `I would like ${s}`,
-      }));
-    }
-
-    // 5. Asking about doctors - detect when AI mentions choosing/preferring a doctor
-    const isAskingDoctor = (
-      lowerResponse.includes("which dentist") || lowerResponse.includes("which doctor") ||
-      lowerResponse.includes("prefer") || lowerResponse.includes("preference") ||
-      lowerResponse.includes("welke tandarts") || lowerResponse.includes("voorkeur") ||
-      lowerResponse.includes("recommend") || lowerResponse.includes("would you like to see") ||
-      lowerResponse.includes("wilt u bij") || lowerResponse.includes("specialist") ||
-      (lowerResponse.includes("dr.") && lowerResponse.includes("?"))
-    ) && !hasSelectedDoctor;
-
-    if (isAskingDoctor && hasBookingIntent) {
-      return activeDoctors.map(d => ({
-        label: `Dr. ${d.name} (${d.specialty})`,
-        value: language === "nl" ? `Ik wil graag bij Dr. ${d.name}` : `I'd like Dr. ${d.name}`,
-      }));
-    }
-
-    // 6. Asking about dates/when to come
-    const isAskingDate = (
-      lowerResponse.includes("when would you") || lowerResponse.includes("which day") || 
-      lowerResponse.includes("what day") || lowerResponse.includes("which date") || 
-      lowerResponse.includes("what date") || lowerResponse.includes("preferred date") ||
-      lowerResponse.includes("wanneer wilt") || lowerResponse.includes("welke dag") ||
-      lowerResponse.includes("welke datum") || lowerResponse.includes("when do you") ||
-      lowerResponse.includes("come in") || lowerResponse.includes("like to visit") ||
-      lowerResponse.includes("when are you") || lowerResponse.includes("schedule for")
+    // === PRIORITY 5: Reschedule confirmation ===
+    const isAskingRescheduleConfirm = (
+      lowerResponse.includes("reschedule to") || lowerResponse.includes("shall i reschedule") ||
+      lowerResponse.includes("confirm the reschedule") || lowerResponse.includes("would you like me to reschedule") ||
+      lowerResponse.includes("like to reschedule") ||
+      lowerResponse.includes("verzetten naar") || lowerResponse.includes("zal ik verzetten")
     );
 
-    if (isAskingDate && hasBookingIntent) {
-      const now = new Date();
-      const options: { label: string; value: string }[] = [];
-      const dayNamesEN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-      const dayNamesNL = ["Zondag", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag"];
-      const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
-
-      for (let i = 0; i < 14 && options.length < 5; i++) {
-        const d = new Date(now);
-        d.setDate(d.getDate() + i);
-        if (!workingDays.includes(d.getDay())) continue;
-        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const dayName = language === "nl" ? dayNamesNL[d.getDay()] : dayNamesEN[d.getDay()];
-        const label = i === 0
-          ? (language === "nl" ? `Vandaag (${dayName})` : `Today (${dayName})`)
-          : i === 1
-          ? (language === "nl" ? `Morgen (${dayName})` : `Tomorrow (${dayName})`)
-          : `${dayName} ${dateStr}`;
-        options.push({ label, value: dateStr });
-      }
-      return options;
+    if (isAskingRescheduleConfirm) {
+      return language === "nl"
+        ? [
+            { label: "Ja, verzet het", value: "Ja, verzet mijn afspraak alstublieft" },
+            { label: "Nee, toch niet", value: "Nee, ik wil een andere tijd kiezen" },
+          ]
+        : [
+            { label: "Yes, reschedule it", value: "Yes, please reschedule my appointment" },
+            { label: "No, different time", value: "No, I want to pick a different time" },
+          ];
     }
 
-    // 7. Confirmation - ONLY when AI explicitly summarizes and asks to confirm
-    // Must be very specific to avoid false positives
+    // === PRIORITY 6: Booking confirmation (shall I book?) ===
     const isAskingConfirmation = (
       lowerResponse.includes("shall i book") || lowerResponse.includes("shall i go ahead") ||
       lowerResponse.includes("should i book") || lowerResponse.includes("should i go ahead") ||
@@ -1182,16 +1088,124 @@ export async function registerRoutes(
           ];
     }
 
-    // 8. Asking for name, phone, or reference number - no buttons, user must type
-    const isAskingContactInfo = (
-      lowerResponse.includes("your name") || lowerResponse.includes("full name") ||
-      lowerResponse.includes("phone number") || lowerResponse.includes("uw naam") ||
-      lowerResponse.includes("telefoonnummer") || lowerResponse.includes("your number") ||
-      lowerResponse.includes("reference number") || lowerResponse.includes("referentienummer") ||
-      lowerResponse.includes("booking reference") || lowerResponse.includes("apt-")
-    );
-    if (isAskingContactInfo) {
+    // === PRIORITY 7: Initial greeting ===
+    const isGreeting = (lowerResponse.includes("how can i help") || lowerResponse.includes("hoe kan ik") || lowerResponse.includes("what can i") || lowerResponse.includes("welcome")) && conversationHistory.length <= 2;
+
+    if (isGreeting) {
+      return language === "nl"
+        ? [
+            { label: "Afspraak maken", value: "Ik wil een afspraak maken" },
+            { label: "Afspraak verzetten", value: "Ik wil mijn afspraak verzetten" },
+            { label: "Afspraak annuleren", value: "Ik wil mijn afspraak annuleren" },
+            { label: "Andere vraag", value: "Ik heb een andere vraag" },
+          ]
+        : [
+            { label: "Book an appointment", value: "I would like to book an appointment" },
+            { label: "Reschedule appointment", value: "I want to reschedule my appointment" },
+            { label: "Cancel appointment", value: "I want to cancel my appointment" },
+            { label: "Other question", value: "I have another question" },
+          ];
+    }
+
+    // === Check if we're in cancel/reschedule flow — if so, no booking buttons ===
+    const inCancelFlow = recentUserText.includes("cancel") || recentUserText.includes("annuleren");
+    const inRescheduleFlow = recentUserText.includes("reschedule") || recentUserText.includes("verzetten") || recentUserText.includes("verplaats");
+    if (inCancelFlow || inRescheduleFlow) {
       return [];
+    }
+
+    // === From here, only show buttons for BOOKING flow ===
+    const hasBookingIntent = allUserText.includes("book") || allUserText.includes("appointment") || allUserText.includes("afspraak") || allUserText.includes("boek") || allUserText.includes("schedule");
+
+    if (!hasBookingIntent) {
+      return [];
+    }
+
+    const hasSelectedService = services.some(s => allUserText.includes(s.toLowerCase()));
+    const hasSelectedDoctor = activeDoctors.some(d => allUserText.includes(d.name.toLowerCase()));
+    const userJustPickedTime = /^\d{1,2}:\d{2}$/.test(lowerMessage.trim());
+    const hasSelectedTime = userMessages.some(m => /^\d{1,2}:\d{2}$/.test(m.trim()));
+
+    // === PRIORITY 8: Time slot buttons ===
+    // Only show when AI is LISTING available times (2+ unique times) and user hasn't just picked one
+    if (!userJustPickedTime && !hasSelectedTime) {
+      const timeSlotMatch = aiResponse.match(/\b(\d{1,2}:\d{2})\b/g);
+      if (timeSlotMatch && timeSlotMatch.length >= 2) {
+        const uniqueSlots = [...new Set(timeSlotMatch)];
+        if (uniqueSlots.length >= 2) {
+          return uniqueSlots.slice(0, 6).map(t => ({
+            label: t,
+            value: t,
+          }));
+        }
+      }
+    }
+
+    // === PRIORITY 9: Service selection ===
+    const isAskingService = (
+      lowerResponse.includes("service") || lowerResponse.includes("treatment") ||
+      lowerResponse.includes("dienst") || lowerResponse.includes("behandeling") ||
+      lowerResponse.includes("which type") || lowerResponse.includes("what type") ||
+      lowerResponse.includes("welke soort") || lowerResponse.includes("what kind") ||
+      lowerResponse.includes("looking for") || lowerResponse.includes("need help with")
+    ) && !hasSelectedService;
+
+    if (isAskingService) {
+      return services.map(s => ({
+        label: s,
+        value: language === "nl" ? `Ik wil graag ${s}` : `I would like ${s}`,
+      }));
+    }
+
+    // === PRIORITY 10: Doctor selection ===
+    const isAskingDoctor = (
+      lowerResponse.includes("which dentist") || lowerResponse.includes("which doctor") ||
+      lowerResponse.includes("prefer") || lowerResponse.includes("preference") ||
+      lowerResponse.includes("welke tandarts") || lowerResponse.includes("voorkeur") ||
+      lowerResponse.includes("recommend") || lowerResponse.includes("would you like to see") ||
+      lowerResponse.includes("wilt u bij") || lowerResponse.includes("specialist") ||
+      (lowerResponse.includes("dr.") && lowerResponse.includes("?"))
+    ) && !hasSelectedDoctor;
+
+    if (isAskingDoctor) {
+      return activeDoctors.map(d => ({
+        label: `Dr. ${d.name} (${d.specialty})`,
+        value: language === "nl" ? `Ik wil graag bij Dr. ${d.name}` : `I'd like Dr. ${d.name}`,
+      }));
+    }
+
+    // === PRIORITY 11: Date selection ===
+    const isAskingDate = (
+      lowerResponse.includes("when would you") || lowerResponse.includes("which day") ||
+      lowerResponse.includes("what day") || lowerResponse.includes("which date") ||
+      lowerResponse.includes("what date") || lowerResponse.includes("preferred date") ||
+      lowerResponse.includes("wanneer wilt") || lowerResponse.includes("welke dag") ||
+      lowerResponse.includes("welke datum") || lowerResponse.includes("when do you") ||
+      lowerResponse.includes("come in") || lowerResponse.includes("like to visit") ||
+      lowerResponse.includes("when are you") || lowerResponse.includes("schedule for")
+    );
+
+    if (isAskingDate) {
+      const now = new Date();
+      const options: { label: string; value: string }[] = [];
+      const dayNamesEN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const dayNamesNL = ["Zondag", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag"];
+      const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
+
+      for (let i = 0; i < 14 && options.length < 5; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + i);
+        if (!workingDays.includes(d.getDay())) continue;
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const dayName = language === "nl" ? dayNamesNL[d.getDay()] : dayNamesEN[d.getDay()];
+        const label = i === 0
+          ? (language === "nl" ? `Vandaag (${dayName})` : `Today (${dayName})`)
+          : i === 1
+          ? (language === "nl" ? `Morgen (${dayName})` : `Tomorrow (${dayName})`)
+          : `${dayName} ${dateStr}`;
+        options.push({ label, value: dateStr });
+      }
+      return options;
     }
 
     return [];
