@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ChatWidget } from "@/components/chat-widget";
 import { Calendar, MessageSquare, Users, Clock, Shield, Sparkles } from "lucide-react";
 
 export default function LandingPage() {
@@ -54,7 +55,7 @@ export default function LandingPage() {
                   <a href="/login">Get Started Free</a>
                 </Button>
                 <Button size="lg" variant="outline" asChild data-testid="button-demo">
-                  <a href="#features">Learn More</a>
+                  <a href="/chat">Try Live Demo</a>
                 </Button>
               </div>
               <div className="flex items-center gap-6 text-sm text-muted-foreground">
@@ -243,6 +244,8 @@ export default function LandingPage() {
           </p>
         </div>
       </footer>
+
+      <ChatWidget />
     </div>
   );
 }
