@@ -4,10 +4,16 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageSquare, X, Send, Loader2, Globe } from "lucide-react";
 
+interface QuickReply {
+  label: string;
+  value: string;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  quickReplies?: QuickReply[];
 }
 
 interface ChatWidgetProps {
@@ -54,11 +60,25 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
       const data = await response.json();
       setSessionId(data.sessionId);
       if (data.welcomeMessage) {
+        const welcomeQuickReplies: QuickReply[] = language === "nl"
+          ? [
+              { label: "Afspraak maken", value: "Ik wil een afspraak maken" },
+              { label: "Afspraak verzetten", value: "Ik wil mijn afspraak verzetten" },
+              { label: "Afspraak annuleren", value: "Ik wil mijn afspraak annuleren" },
+              { label: "Andere vraag", value: "Ik heb een andere vraag" },
+            ]
+          : [
+              { label: "Book an appointment", value: "I would like to book an appointment" },
+              { label: "Reschedule appointment", value: "I want to reschedule my appointment" },
+              { label: "Cancel appointment", value: "I want to cancel my appointment" },
+              { label: "Other question", value: "I have another question" },
+            ];
         setMessages([
           {
             id: "welcome",
             role: "assistant",
             content: data.welcomeMessage,
+            quickReplies: welcomeQuickReplies,
           },
         ]);
       }
@@ -67,13 +87,23 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
     }
   };
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+  const handleQuickReply = (reply: QuickReply) => {
+    setInput(reply.value);
+    setMessages((prev) =>
+      prev.map((m) => ({ ...m, quickReplies: undefined }))
+    );
+    setTimeout(() => {
+      sendMessageDirect(reply.value);
+    }, 50);
+  };
+
+  const sendMessageDirect = async (messageText: string) => {
+    if (!messageText.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: input.trim(),
+      content: messageText.trim(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -117,13 +147,24 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
+          const rawData = line.slice(6);
+          if (rawData === "[DONE]") continue;
           try {
-            const data = JSON.parse(line.slice(6));
+            const data = JSON.parse(rawData);
             if (data.content) {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantMessage.id
                     ? { ...m, content: m.content + data.content }
+                    : m
+                )
+              );
+            }
+            if (data.quickReplies) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessage.id
+                    ? { ...m, quickReplies: data.quickReplies }
                     : m
                 )
               );
@@ -148,6 +189,14 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const sendMessage = async () => {
+    if (!input.trim() || isLoading) return;
+    setMessages((prev) =>
+      prev.map((m) => ({ ...m, quickReplies: undefined }))
+    );
+    await sendMessageDirect(input.trim());
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -223,27 +272,42 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
 
       {/* Language indicator */}
       <div className="px-4 py-2 bg-muted text-center text-sm text-muted-foreground">
-        {language === "nl" ? "Nederlands" : "English"} • {language === "nl" ? "Klik 🌐 om te wisselen" : "Click 🌐 to switch"}
+        {language === "nl" ? "Nederlands" : "English"} {" | "} {language === "nl" ? "Klik op de wereldbol om te wisselen" : "Click globe to switch"}
       </div>
 
       {/* Messages */}
       <ScrollArea className="flex-1 p-4 chat-messages" ref={scrollRef}>
         <div className="space-y-4">
           {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"} chat-message-animate`}
-            >
+            <div key={message.id}>
               <div
-                className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                  message.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-tr-none"
-                    : "bg-muted rounded-tl-none"
-                }`}
-                data-testid={`message-${message.id}`}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"} chat-message-animate`}
               >
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                <div
+                  className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                    message.role === "user"
+                      ? "bg-primary text-primary-foreground rounded-tr-none"
+                      : "bg-muted rounded-tl-none"
+                  }`}
+                  data-testid={`message-${message.id}`}
+                >
+                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                </div>
               </div>
+              {message.quickReplies && message.quickReplies.length > 0 && !isLoading && (
+                <div className="flex flex-wrap gap-2 mt-2 pl-1">
+                  {message.quickReplies.map((reply, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleQuickReply(reply)}
+                      className="text-sm px-3 py-1.5 rounded-full border border-primary text-primary bg-transparent cursor-pointer transition-colors hover:bg-primary hover:text-primary-foreground"
+                      data-testid={`quick-reply-${idx}`}
+                    >
+                      {reply.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
           {isLoading && (
