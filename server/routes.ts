@@ -962,6 +962,125 @@ export async function registerRoutes(
   // CHAT ROUTES (AI Booking)
   // ========================================
 
+  async function determineQuickReplies(
+    message: string,
+    aiResponse: string,
+    conversationHistory: { role: string; content: string }[],
+    language: string,
+  ): Promise<{ label: string; value: string }[]> {
+    const lowerResponse = aiResponse.toLowerCase();
+    const lowerMessage = message.toLowerCase();
+    const allMessages = [...conversationHistory.map(m => m.content.toLowerCase()), lowerMessage, lowerResponse];
+    const fullConversation = allMessages.join(" ");
+
+    const settings = await storage.getClinicSettings();
+    const doctors = await storage.getDoctors();
+    const activeDoctors = doctors.filter((d) => d.isActive);
+    const services = settings?.services || ["General Checkup", "Teeth Cleaning"];
+
+    const hasBookingIntent = fullConversation.includes("book") || fullConversation.includes("appointment") || fullConversation.includes("afspraak") || fullConversation.includes("boek");
+    const hasSelectedService = services.some(s => fullConversation.includes(s.toLowerCase()));
+    const hasSelectedDoctor = activeDoctors.some(d => fullConversation.includes(d.name.toLowerCase()));
+
+    const isAskingService = lowerResponse.includes("service") || lowerResponse.includes("treatment") || lowerResponse.includes("dienst") || lowerResponse.includes("behandeling") || lowerResponse.includes("which type") || lowerResponse.includes("what type") || lowerResponse.includes("welke soort");
+    const isAskingDoctor = lowerResponse.includes("dentist") || lowerResponse.includes("doctor") || (lowerResponse.includes("tandarts") && !lowerResponse.includes("tandartskliniek")) || lowerResponse.includes("prefer") || lowerResponse.includes("voorkeur");
+    const isAskingDate = lowerResponse.includes("when") || lowerResponse.includes("which day") || lowerResponse.includes("what day") || lowerResponse.includes("wanneer") || lowerResponse.includes("welke dag") || lowerResponse.includes("which date") || lowerResponse.includes("what date");
+    const isAskingTime = lowerResponse.includes("time slot") || lowerResponse.includes("which time") || lowerResponse.includes("what time") || lowerResponse.includes("tijdslot") || lowerResponse.includes("welk tijdstip") || lowerResponse.includes("available slot");
+    const isAskingConfirmation = lowerResponse.includes("confirm") || lowerResponse.includes("shall i") || lowerResponse.includes("should i") || lowerResponse.includes("would you like me to book") || lowerResponse.includes("bevestig") || lowerResponse.includes("zal ik");
+    const isBookingComplete = lowerResponse.includes("booked") || lowerResponse.includes("confirmed") || lowerResponse.includes("geboekt") || lowerResponse.includes("bevestigd");
+    const isGreeting = (lowerResponse.includes("how can i help") || lowerResponse.includes("hoe kan ik") || lowerResponse.includes("what can i") || lowerResponse.includes("welcome")) && conversationHistory.length <= 2;
+
+    if (isBookingComplete) {
+      return language === "nl"
+        ? [
+            { label: "Nieuwe afspraak maken", value: "Ik wil nog een afspraak maken" },
+            { label: "Andere vraag", value: "Ik heb een andere vraag" },
+          ]
+        : [
+            { label: "Book another appointment", value: "I would like to book another appointment" },
+            { label: "Other question", value: "I have another question" },
+          ];
+    }
+
+    if (isGreeting) {
+      return language === "nl"
+        ? [
+            { label: "Afspraak maken", value: "Ik wil een afspraak maken" },
+            { label: "Afspraak verzetten", value: "Ik wil mijn afspraak verzetten" },
+            { label: "Afspraak annuleren", value: "Ik wil mijn afspraak annuleren" },
+            { label: "Andere vraag", value: "Ik heb een andere vraag" },
+          ]
+        : [
+            { label: "Book an appointment", value: "I would like to book an appointment" },
+            { label: "Reschedule appointment", value: "I want to reschedule my appointment" },
+            { label: "Cancel appointment", value: "I want to cancel my appointment" },
+            { label: "Other question", value: "I have another question" },
+          ];
+    }
+
+    if (isAskingConfirmation) {
+      return language === "nl"
+        ? [
+            { label: "Ja, bevestig", value: "Ja, bevestig mijn afspraak alstublieft" },
+            { label: "Nee, wijzig", value: "Nee, ik wil iets wijzigen" },
+          ]
+        : [
+            { label: "Yes, confirm", value: "Yes, please confirm my appointment" },
+            { label: "No, change something", value: "No, I want to change something" },
+          ];
+    }
+
+    if (isAskingService && hasBookingIntent) {
+      return services.map(s => ({
+        label: s,
+        value: language === "nl" ? `Ik wil graag ${s}` : `I would like ${s}`,
+      }));
+    }
+
+    if (isAskingDoctor && hasBookingIntent) {
+      return activeDoctors.map(d => ({
+        label: `Dr. ${d.name}`,
+        value: language === "nl" ? `Ik wil graag bij Dr. ${d.name}` : `I'd like Dr. ${d.name}`,
+      }));
+    }
+
+    if (isAskingDate && hasBookingIntent) {
+      const now = new Date();
+      const options: { label: string; value: string }[] = [];
+      const dayNamesEN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const dayNamesNL = ["Zondag", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag"];
+      const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
+
+      for (let i = 0; i < 14 && options.length < 4; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + i);
+        if (!workingDays.includes(d.getDay())) continue;
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const dayName = language === "nl" ? dayNamesNL[d.getDay()] : dayNamesEN[d.getDay()];
+        const label = i === 0
+          ? (language === "nl" ? `Vandaag (${dayName})` : `Today (${dayName})`)
+          : i === 1
+          ? (language === "nl" ? `Morgen (${dayName})` : `Tomorrow (${dayName})`)
+          : `${dayName} ${dateStr}`;
+        options.push({ label, value: dateStr });
+      }
+      return options;
+    }
+
+    if (hasBookingIntent) {
+      const timeSlotMatch = aiResponse.match(/\b(\d{1,2}:\d{2})\b/g);
+      if (timeSlotMatch && timeSlotMatch.length >= 2) {
+        const uniqueSlots = [...new Set(timeSlotMatch)];
+        return uniqueSlots.slice(0, 6).map(t => ({
+          label: t,
+          value: t,
+        }));
+      }
+    }
+
+    return [];
+  }
+
   app.post("/api/chat/session", async (req, res) => {
     try {
       const { language = "en" } = req.body;
@@ -1191,7 +1310,8 @@ STIJLREGELS:
 - Vraag pas laat in het gesprek om contactgegevens
 - Geen emoji's, geen opmaak (geen **vet** of *cursief*)
 - Houd het kort - max 2-3 zinnen per antwoord
-- Wees behulpzaam en professioneel maar warm`
+- Wees behulpzaam en professioneel maar warm
+- De chatinterface toont automatisch klikbare keuzetoetsen. Je hoeft de opties NIET in je tekst op te sommen. Stel gewoon de vraag natuurlijk (bijv. "Welke behandeling wilt u?" of "Bij welke tandarts wilt u?") en het systeem toont de juiste knoppen. GEEN genummerde of opsommingslijsten in je tekst.`
           : `You are a warm, helpful receptionist for ${settings?.clinicName || "the dental clinic"}. 
 Talk naturally like a real person who genuinely wants to help. Be concise but friendly.
 
@@ -1231,7 +1351,8 @@ STYLE RULES:
 - Only ask for contact details late in the conversation
 - No emojis, no formatting (no **bold** or *italic*)
 - Keep it short - max 2-3 sentences per response
-- Be helpful and professional but warm`;
+- Be helpful and professional but warm
+- The chat interface shows clickable option buttons automatically. You do NOT need to list options in your text. Just ask the question naturally (e.g. "Which service would you like?" or "Which dentist do you prefer?") and the system will show the right buttons. Do NOT number or bullet-list options in your text.`;
 
       // Build conversation history
       const conversationHistory = previousMessages.slice(-10).map((m) => ({
@@ -1824,6 +1945,21 @@ STYLE RULES:
       // Send booking result if available
       if (bookingResult) {
         res.write(`data: ${JSON.stringify({ booking: bookingResult })}\n\n`);
+      }
+
+      // Determine and send quick reply options
+      try {
+        const quickReplies = await determineQuickReplies(
+          message,
+          fullResponse,
+          conversationHistory,
+          language,
+        );
+        if (quickReplies.length > 0) {
+          res.write(`data: ${JSON.stringify({ quickReplies })}\n\n`);
+        }
+      } catch (qrError) {
+        console.error("Error determining quick replies:", qrError);
       }
 
       res.write("data: [DONE]\n\n");
