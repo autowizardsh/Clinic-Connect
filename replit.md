@@ -69,17 +69,36 @@ Preferred communication style: Simple, everyday language.
 
 ### Project Structure
 ```
-client/           # React frontend
+client/               # React frontend
   src/
-    components/   # UI components including shadcn/ui
-    pages/        # Route pages (admin/*, doctor/*, chat, login)
-    hooks/        # Custom React hooks
-    lib/          # Utilities and query client
-server/           # Express backend
-  replit_integrations/  # AI, auth, chat modules
-shared/           # Shared types and database schema
-  models/         # Drizzle table definitions
-  schema.ts       # Main schema exports
+    components/       # UI components including shadcn/ui
+    pages/            # Route pages (admin/*, doctor/*, chat, login)
+    hooks/            # Custom React hooks
+    lib/              # Utilities and query client
+server/               # Express backend
+  middleware/         # Express middleware
+    auth.ts           # requireAuth, requireAdmin, requireDoctor
+  services/           # Shared services
+    openai.ts         # OpenAI client instance
+  routes/             # Modular route handlers
+    index.ts          # Main route registration (wires all modules)
+    admin.ts          # Admin CRUD routes (/api/admin/*)
+    public.ts         # Public-facing routes (/api/public/*)
+    doctor/           # Doctor routes
+      index.ts        # Profile, appointments, availability (/api/doctor/*)
+      calendar.ts     # Google Calendar OAuth & sync (/api/doctor/calendar/*)
+    chat/             # AI chat routes
+      index.ts        # Re-export
+      handlers.ts     # Route handlers (session, message, message-simple)
+      tools.ts        # OpenAI function/tool definitions
+      prompts.ts      # System prompt builders (EN/NL)
+      availability.ts # Slot availability logic
+      quickReplies.ts # Quick reply button logic
+  replit_integrations/ # AI, auth setup modules
+  google-calendar.ts  # Google Calendar API helpers
+shared/               # Shared types and database schema
+  models/             # Drizzle table definitions
+  schema.ts           # Main schema exports
 ```
 
 ## External Dependencies
