@@ -6,6 +6,7 @@ DentalAI is an AI-powered receptionist system for dental clinics that automates 
 
 Key capabilities:
 - AI chat widget for patient appointment booking (English & Dutch)
+- WhatsApp Business integration using same AI chat engine
 - Appointment reschedule/cancel via chat with reference number + phone verification
 - Admin dashboard for managing doctors, patients, and appointments
 - Doctor portal for viewing schedules and managing availability
@@ -89,11 +90,15 @@ server/               # Express backend
       calendar.ts     # Google Calendar OAuth & sync (/api/doctor/calendar/*)
     chat/             # AI chat routes
       index.ts        # Re-export
+      engine.ts       # Reusable chat processing logic (shared by web & WhatsApp)
       handlers.ts     # Route handlers (session, message, message-simple)
       tools.ts        # OpenAI function/tool definitions
       prompts.ts      # System prompt builders (EN/NL)
       availability.ts # Slot availability logic
       quickReplies.ts # Quick reply button logic
+    whatsapp/         # WhatsApp Business integration
+      index.ts        # Webhook endpoints & message handler
+      service.ts      # Graph API message sending (text/buttons/lists)
   replit_integrations/ # AI, auth setup modules
   google-calendar.ts  # Google Calendar API helpers
 shared/               # Shared types and database schema
@@ -113,6 +118,12 @@ shared/               # Shared types and database schema
 
 ### Third-Party Integrations
 - **Google Calendar**: Optional sync for doctor schedules (fields exist for OAuth tokens)
+- **WhatsApp Business API**: Via Meta Graph API v24.0 for patient messaging
+  - Environment variables: `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`
+  - Webhook URL: `/api/whatsapp/webhook` (must be publicly accessible for Meta)
+  - Supports: text messages, interactive buttons (up to 3), interactive lists (up to 10 items)
+  - Reuses the same AI chat engine (`server/routes/chat/engine.ts`) as the web widget
+  - Sessions tracked in-memory per phone number with 30-minute timeout
 - **ffmpeg**: Required for WebM to WAV audio conversion (available on Replit)
 
 ### Key NPM Packages
