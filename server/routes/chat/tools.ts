@@ -26,10 +26,14 @@ export const bookingFunction = {
   function: {
     name: "book_appointment",
     description:
-      "Book a dental appointment ONLY after collecting ALL required information from the patient. DO NOT call this function until you have explicitly asked for and received: 1) patient's REAL full name (first and last), 2) patient's REAL phone number, 3) preferred service, 4) preferred date and time. NEVER use placeholder values like 'pending' or 'unknown'. If any information is missing, ask for it first instead of calling this function.",
+      "Book a dental appointment ONLY after collecting ALL required information from the patient. For RETURNING patients, you MUST call lookup_patient_by_email FIRST and use the returned patientId. DO NOT call this function until you have explicitly asked for and received: 1) patient's REAL full name (first and last), 2) patient's REAL phone number, 3) preferred service, 4) preferred date and time. NEVER use placeholder values like 'pending' or 'unknown'. If any information is missing, ask for it first instead of calling this function.",
     parameters: {
       type: "object",
       properties: {
+        patientId: {
+          type: "number",
+          description: "ID of an existing patient returned by lookup_patient_by_email. If the patient was found via lookup, pass this ID to reuse their record. Omit for new patients.",
+        },
         patientName: {
           type: "string",
           description: "Patient's REAL full name (first and last name) - NEVER use placeholder like 'pending'",
@@ -158,7 +162,7 @@ export const lookupPatientByEmailFunction = {
   type: "function" as const,
   function: {
     name: "lookup_patient_by_email",
-    description: "Look up an existing patient by their email address. Call this when a returning patient provides their email to retrieve their stored details (name, phone) so they don't have to re-enter everything. Only call this when the patient says they have visited before.",
+    description: "MANDATORY for returning patients: Look up an existing patient by their email address. You MUST call this tool BEFORE book_appointment when a patient says they have visited before or are a returning patient. Ask the returning patient for their email first, then call this tool. If the patient is found, use the returned patientId, name, and phone in the book_appointment call. NEVER skip this step for returning patients.",
     parameters: {
       type: "object",
       properties: {
