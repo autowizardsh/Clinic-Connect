@@ -47,6 +47,7 @@ export interface IStorage {
   getPatients(): Promise<Patient[]>;
   getPatientById(id: number): Promise<Patient | undefined>;
   getPatientByPhone(phone: string): Promise<Patient | undefined>;
+  getPatientByEmail(email: string): Promise<Patient | undefined>;
   createPatient(patient: InsertPatient): Promise<Patient>;
   updatePatient(id: number, patient: Partial<InsertPatient>): Promise<Patient | undefined>;
   deletePatient(id: number): Promise<void>;
@@ -171,6 +172,12 @@ export class DatabaseStorage implements IStorage {
   async getPatientByPhone(phone: string): Promise<Patient | undefined> {
     const [patient] = await db.select().from(patients).where(eq(patients.phone, phone));
     return patient;
+  }
+
+  async getPatientByEmail(email: string): Promise<Patient | undefined> {
+    const normalizedEmail = email.toLowerCase().trim();
+    const allPatients = await db.select().from(patients);
+    return allPatients.find(p => p.email?.toLowerCase().trim() === normalizedEmail);
   }
 
   async createPatient(patient: InsertPatient): Promise<Patient> {

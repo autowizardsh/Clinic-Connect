@@ -40,7 +40,7 @@ export const bookingFunction = {
         },
         patientEmail: {
           type: "string",
-          description: "Email address of the patient (optional)",
+          description: "Email address of the patient (REQUIRED)",
         },
         service: {
           type: "string",
@@ -70,6 +70,7 @@ export const bookingFunction = {
       required: [
         "patientName",
         "patientPhone",
+        "patientEmail",
         "service",
         "doctorId",
         "date",
@@ -153,6 +154,24 @@ export const rescheduleAppointmentFunction = {
   },
 };
 
+export const lookupPatientByEmailFunction = {
+  type: "function" as const,
+  function: {
+    name: "lookup_patient_by_email",
+    description: "Look up an existing patient by their email address. Call this when a returning patient provides their email to retrieve their stored details (name, phone) so they don't have to re-enter everything. Only call this when the patient says they have visited before.",
+    parameters: {
+      type: "object",
+      properties: {
+        email: {
+          type: "string",
+          description: "The patient's email address to look up",
+        },
+      },
+      required: ["email"],
+    },
+  },
+};
+
 export const checkAvailabilityFunctionSimple = {
   type: "function" as const,
   function: {
@@ -179,7 +198,7 @@ export const bookingFunctionSimple = {
       properties: {
         patientName: { type: "string" },
         patientPhone: { type: "string" },
-        patientEmail: { type: "string" },
+        patientEmail: { type: "string", description: "Patient's email address (REQUIRED)" },
         service: { type: "string" },
         doctorId: { type: "number" },
         doctorName: { type: "string" },
@@ -187,7 +206,7 @@ export const bookingFunctionSimple = {
         time: { type: "string", description: "HH:MM format" },
         notes: { type: "string" },
       },
-      required: ["patientName", "patientPhone", "service", "doctorId", "date", "time"],
+      required: ["patientName", "patientPhone", "patientEmail", "service", "doctorId", "date", "time"],
     },
   },
 };

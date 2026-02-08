@@ -8,6 +8,7 @@ import {
   lookupAppointmentFunction,
   cancelAppointmentFunction,
   rescheduleAppointmentFunction,
+  lookupPatientByEmailFunction,
 } from "./tools";
 import { buildSystemPrompt } from "./prompts";
 import { findAvailableSlots, getAvailableSlotsForDate } from "./availability";
@@ -94,6 +95,7 @@ export async function processChatMessage(
     lookupAppointmentFunction,
     cancelAppointmentFunction,
     rescheduleAppointmentFunction,
+    lookupPatientByEmailFunction,
   ];
 
   let initialResponse = await openai.chat.completions.create({
@@ -155,6 +157,59 @@ export async function processChatMessage(
       responseMessage = followUpResponse.choices[0]?.message;
     } catch (e) {
       console.error("Error checking availability:", e);
+    }
+  }
+
+  if (
+    responseMessage?.tool_calls &&
+    responseMessage.tool_calls.length > 0 &&
+    (responseMessage.tool_calls[0] as any)?.function?.name ===
+      "lookup_patient_by_email"
+  ) {
+    const emailToolCall = responseMessage.tool_calls[0] as {
+      id: string;
+      function: { name: string; arguments: string };
+    };
+
+    try {
+      const emailData = JSON.parse(emailToolCall.function.arguments);
+      const email = (emailData.email || "").trim().toLowerCase();
+
+      const patient = await storage.getPatientByEmail(email);
+
+      let lookupResult = "";
+      if (patient) {
+        lookupResult = JSON.stringify({
+          found: true,
+          patientId: patient.id,
+          name: patient.name,
+          phone: patient.phone,
+          email: patient.email,
+        });
+      } else {
+        lookupResult = JSON.stringify({
+          found: false,
+          message: "No patient found with this email address. Please treat them as a new patient and collect their full details.",
+        });
+      }
+
+      currentMessages.push(responseMessage);
+      currentMessages.push({
+        role: "tool",
+        tool_call_id: emailToolCall.id,
+        content: lookupResult,
+      });
+
+      const emailFollowUp = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: currentMessages,
+        tools: allTools,
+        tool_choice: "auto",
+      });
+
+      responseMessage = emailFollowUp.choices[0]?.message;
+    } catch (e) {
+      console.error("Error looking up patient by email:", e);
     }
   }
 
@@ -556,6 +611,13 @@ export async function processChatMessage(
         );
       }
 
+      const patientEmailAddr = (bookingData.patientEmail || "").trim();
+      if (!patientEmailAddr || !patientEmailAddr.includes("@")) {
+        throw new Error(
+          "MISSING_INFO: I need your email address to book the appointment. What is your email?",
+        );
+      }
+
       const appointmentDateTime = new Date(
         `${bookingData.date}T${bookingData.time}:00`,
       );
@@ -690,12 +752,21 @@ export async function processChatMessage(
         }
       }
 
-      let patient = await storage.getPatientByPhone(bookingData.patientPhone);
+      let patient = await storage.getPatientByEmail(patientEmailAddr);
       if (!patient) {
+        patient = await storage.getPatientByPhone(bookingData.patientPhone);
+      }
+      if (patient) {
+        await storage.updatePatient(patient.id, {
+          name: bookingData.patientName,
+          phone: bookingData.patientPhone,
+          email: patientEmailAddr,
+        });
+      } else {
         patient = await storage.createPatient({
           name: bookingData.patientName,
           phone: bookingData.patientPhone,
-          email: bookingData.patientEmail || null,
+          email: patientEmailAddr,
           notes: `Booked via ${source} on ${new Date().toLocaleDateString()}`,
         });
       }
@@ -747,10 +818,9 @@ export async function processChatMessage(
         service: bookingData.service,
       };
 
-      const patientEmail = bookingData.patientEmail || patient.email;
-      if (patientEmail) {
+      if (patientEmailAddr) {
         sendAppointmentConfirmationEmail({
-          patientEmail,
+          patientEmail: patientEmailAddr,
           patientName: bookingData.patientName,
           doctorName: bookingData.doctorName,
           date: appointmentDateTime,
