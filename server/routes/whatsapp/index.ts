@@ -251,6 +251,13 @@ export function registerWhatsAppRoutes(app: Express) {
   });
 
   app.post("/api/whatsapp/webhook", async (req, res) => {
+    console.log("=== WhatsApp Webhook POST received ===");
+    console.log("Headers:", JSON.stringify({
+      "x-hub-signature-256": req.headers["x-hub-signature-256"] ? "present" : "missing",
+      "content-type": req.headers["content-type"],
+    }));
+    console.log("Body object type:", req.body?.object);
+    console.log("Body entries count:", req.body?.entry?.length || 0);
     try {
       const signature = req.headers["x-hub-signature-256"] as string | undefined;
       const rawBody = (req as any).rawBody;
@@ -260,11 +267,13 @@ export function registerWhatsAppRoutes(app: Express) {
         return res.sendStatus(403);
       }
 
+      console.log("Webhook signature verified OK");
       res.sendStatus(200);
 
       const body = req.body;
 
       if (body.object !== "whatsapp_business_account") {
+        console.log("Ignoring non-whatsapp object:", body.object);
         return;
       }
 
