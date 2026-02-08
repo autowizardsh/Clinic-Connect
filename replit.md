@@ -20,15 +20,6 @@ Key capabilities:
 - Phone verification required alongside reference number to prevent unauthorized access
 - Reference numbers displayed in admin and doctor appointment cards
 
-### Patient Email & Returning Patient Flow
-- Email is REQUIRED for all bookings (chatbot enforces this before booking)
-- Chatbot asks if patient is new or returning before collecting details
-- Returning patients provide their email; system looks up via `lookup_patient_by_email` tool
-- If found, patient details (name, phone) are auto-populated — no need to re-enter
-- If not found, patient is treated as new and all details are collected
-- Patient lookup: first by email, then fallback to phone number
-- Storage method: `getPatientByEmail(email)` in IStorage interface
-
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.

@@ -20,34 +20,13 @@ export async function determineQuickReplies(
   const allUserText = userMessages.join(" ") + " " + lowerMessage;
   const recentUserText = userMessages.slice(-3).join(" ") + " " + lowerMessage;
 
-  const isAskingNewOrReturning = (
-    (lowerResponse.includes("first time") || lowerResponse.includes("visited before") ||
-    lowerResponse.includes("been here before") || lowerResponse.includes("new patient") ||
-    lowerResponse.includes("returning patient") || lowerResponse.includes("visited us before") ||
-    lowerResponse.includes("eerste keer") || lowerResponse.includes("eerder geweest") ||
-    lowerResponse.includes("nieuwe patient") || lowerResponse.includes("terugkerende patient") ||
-    lowerResponse.includes("eerder bij ons"))
-  );
-  if (isAskingNewOrReturning) {
-    return language === "nl"
-      ? [
-          { label: "Nieuwe patient", value: "Ik ben een nieuwe patient" },
-          { label: "Ik ben eerder geweest", value: "Ik ben hier eerder geweest" },
-        ]
-      : [
-          { label: "New patient", value: "I am a new patient" },
-          { label: "I've visited before", value: "I have visited before" },
-        ];
-  }
-
   const isAskingContactInfo = (
     lowerResponse.includes("your name") || lowerResponse.includes("full name") ||
     lowerResponse.includes("phone number") || lowerResponse.includes("uw naam") ||
     lowerResponse.includes("telefoonnummer") || lowerResponse.includes("your number") ||
     lowerResponse.includes("reference number") || lowerResponse.includes("referentienummer") ||
     lowerResponse.includes("booking reference") || lowerResponse.includes("apt-") ||
-    lowerResponse.includes("email address") || lowerResponse.includes("e-mailadres") ||
-    lowerResponse.includes("email") || lowerResponse.includes("e-mail")
+    lowerResponse.includes("email address") || lowerResponse.includes("e-mailadres")
   );
   if (isAskingContactInfo) {
     return [];

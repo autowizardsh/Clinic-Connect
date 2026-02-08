@@ -10,7 +10,6 @@ import {
   lookupAppointmentFunction,
   cancelAppointmentFunction,
   rescheduleAppointmentFunction,
-  lookupPatientByEmailFunction,
   checkAvailabilityFunctionSimple,
   bookingFunctionSimple,
 } from "./tools";
@@ -126,7 +125,7 @@ export function registerChatRoutes(app: Express) {
       let initialResponse = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: currentMessages,
-        tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
+        tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction],
         tool_choice: "auto",
       });
 
@@ -172,65 +171,13 @@ export function registerChatRoutes(app: Express) {
           const followUpResponse = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: currentMessages,
-            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
+            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction],
             tool_choice: "auto",
           });
           
           responseMessage = followUpResponse.choices[0]?.message;
         } catch (e) {
           console.error("Error checking availability:", e);
-        }
-      }
-
-      if (
-        responseMessage?.tool_calls &&
-        responseMessage.tool_calls.length > 0 &&
-        responseMessage.tool_calls[0]?.function?.name === "lookup_patient_by_email"
-      ) {
-        const emailToolCall = responseMessage.tool_calls[0] as {
-          id: string;
-          function: { name: string; arguments: string };
-        };
-
-        try {
-          const emailData = JSON.parse(emailToolCall.function.arguments);
-          const email = (emailData.email || "").trim().toLowerCase();
-
-          const patient = await storage.getPatientByEmail(email);
-
-          let lookupResult = "";
-          if (patient) {
-            lookupResult = JSON.stringify({
-              found: true,
-              patientId: patient.id,
-              name: patient.name,
-              phone: patient.phone,
-              email: patient.email,
-            });
-          } else {
-            lookupResult = JSON.stringify({
-              found: false,
-              message: "No patient found with this email address. Please treat them as a new patient and collect their full details.",
-            });
-          }
-
-          currentMessages.push(responseMessage);
-          currentMessages.push({
-            role: "tool",
-            tool_call_id: emailToolCall.id,
-            content: lookupResult,
-          });
-
-          const emailFollowUp = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: currentMessages,
-            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
-            tool_choice: "auto",
-          });
-
-          responseMessage = emailFollowUp.choices[0]?.message;
-        } catch (e) {
-          console.error("Error looking up patient by email:", e);
         }
       }
 
@@ -285,7 +232,7 @@ export function registerChatRoutes(app: Express) {
           const lookupFollowUp = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: currentMessages,
-            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
+            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction],
             tool_choice: "auto",
           });
           
@@ -531,11 +478,6 @@ export function registerChatRoutes(app: Express) {
               throw new Error("MISSING_INFO: I need a valid phone number to book the appointment. What is your phone number?");
             }
 
-            const patientEmailAddr = (bookingData.patientEmail || "").trim();
-            if (!patientEmailAddr || !patientEmailAddr.includes("@")) {
-              throw new Error("MISSING_INFO: I need your email address to book the appointment. What is your email?");
-            }
-
             const appointmentDateTime = new Date(
               `${bookingData.date}T${bookingData.time}:00`,
             );
@@ -662,21 +604,14 @@ export function registerChatRoutes(app: Express) {
               }
             }
 
-            let patient = await storage.getPatientByEmail(patientEmailAddr);
+            let patient = await storage.getPatientByPhone(
+              bookingData.patientPhone,
+            );
             if (!patient) {
-              patient = await storage.getPatientByPhone(bookingData.patientPhone);
-            }
-            if (patient) {
-              await storage.updatePatient(patient.id, {
-                name: bookingData.patientName,
-                phone: bookingData.patientPhone,
-                email: patientEmailAddr,
-              });
-            } else {
               patient = await storage.createPatient({
                 name: bookingData.patientName,
                 phone: bookingData.patientPhone,
-                email: patientEmailAddr,
+                email: bookingData.patientEmail || null,
                 notes: `Booked via chat on ${new Date().toLocaleDateString()}`,
               });
               console.log("Created new patient:", patient.id);
@@ -733,9 +668,10 @@ export function registerChatRoutes(app: Express) {
               service: bookingData.service,
             };
 
-            if (patientEmailAddr) {
+            const bookedPatientEmail = bookingData.patientEmail || patient.email;
+            if (bookedPatientEmail) {
               sendAppointmentConfirmationEmail({
-                patientEmail: patientEmailAddr,
+                patientEmail: bookedPatientEmail,
                 patientName: bookingData.patientName,
                 doctorName: bookingData.doctorName,
                 date: appointmentDateTime,
@@ -936,40 +872,13 @@ export function registerChatRoutes(app: Express) {
       let initialResponse = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: currentMessages,
-        tools: [checkAvailabilityFunctionSimple, bookingFunctionSimple, lookupPatientByEmailFunction],
+        tools: [checkAvailabilityFunctionSimple, bookingFunctionSimple],
         tool_choice: "auto",
       });
 
       let responseMessage = initialResponse.choices[0]?.message;
       let fullResponse = "";
       let bookingResult = null;
-
-      if (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0 &&
-          responseMessage.tool_calls[0]?.function?.name === "lookup_patient_by_email") {
-        const emailToolCall = responseMessage.tool_calls[0] as { id: string; function: { name: string; arguments: string } };
-        try {
-          const emailData = JSON.parse(emailToolCall.function.arguments);
-          const email = (emailData.email || "").trim().toLowerCase();
-          const patient = await storage.getPatientByEmail(email);
-          let lookupResult = "";
-          if (patient) {
-            lookupResult = JSON.stringify({ found: true, patientId: patient.id, name: patient.name, phone: patient.phone, email: patient.email });
-          } else {
-            lookupResult = JSON.stringify({ found: false, message: "No patient found with this email address. Please treat them as a new patient and collect their full details." });
-          }
-          currentMessages.push(responseMessage);
-          currentMessages.push({ role: "tool", tool_call_id: emailToolCall.id, content: lookupResult });
-          const emailFollowUp = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: currentMessages,
-            tools: [checkAvailabilityFunctionSimple, bookingFunctionSimple, lookupPatientByEmailFunction],
-            tool_choice: "auto",
-          });
-          responseMessage = emailFollowUp.choices[0]?.message;
-        } catch (e) {
-          console.error("Error looking up patient by email (simple):", e);
-        }
-      }
 
       if (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0 &&
           responseMessage.tool_calls[0]?.function?.name === "check_availability") {
@@ -997,7 +906,7 @@ export function registerChatRoutes(app: Express) {
           const followUpResponse = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: currentMessages,
-            tools: [checkAvailabilityFunctionSimple, bookingFunctionSimple, lookupPatientByEmailFunction],
+            tools: [checkAvailabilityFunctionSimple, bookingFunctionSimple],
             tool_choice: "auto",
           });
           
@@ -1037,11 +946,6 @@ export function registerChatRoutes(app: Express) {
               throw new Error("MISSING_INFO: I need a valid phone number to book the appointment. What is your phone number?");
             }
 
-            const patientEmailAddr = (bookingData.patientEmail || "").trim();
-            if (!patientEmailAddr || !patientEmailAddr.includes("@")) {
-              throw new Error("MISSING_INFO: I need your email address to book the appointment. What is your email?");
-            }
-
             const appointmentDateTime = new Date(`${bookingData.date}T${bookingData.time}:00`);
             const appointmentDuration = settings?.appointmentDuration || 30;
 
@@ -1060,21 +964,12 @@ export function registerChatRoutes(app: Express) {
                 ? "Sorry, dit tijdslot is al geboekt. Kies alstublieft een ander tijdstip."
                 : "Sorry, this time slot is already booked. Please choose a different time.";
             } else {
-              let patient = await storage.getPatientByEmail(patientEmailAddr);
+              let patient = await storage.getPatientByPhone(bookingData.patientPhone);
               if (!patient) {
-                patient = await storage.getPatientByPhone(bookingData.patientPhone);
-              }
-              if (patient) {
-                await storage.updatePatient(patient.id, {
-                  name: bookingData.patientName,
-                  phone: bookingData.patientPhone,
-                  email: patientEmailAddr,
-                });
-              } else {
                 patient = await storage.createPatient({
                   name: bookingData.patientName,
                   phone: bookingData.patientPhone,
-                  email: patientEmailAddr,
+                  email: bookingData.patientEmail || null,
                   notes: `Booked via WhatsApp on ${new Date().toLocaleDateString()}`,
                 });
               }
