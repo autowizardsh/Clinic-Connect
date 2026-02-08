@@ -1,6 +1,7 @@
 import { storage } from "../../storage";
 import { openai } from "../../services/openai";
 import { createCalendarEvent, deleteCalendarEvent } from "../../google-calendar";
+import { sendAppointmentConfirmationEmail, sendAppointmentCancelledEmail, sendAppointmentRescheduledEmail } from "../../services/email";
 import {
   checkAvailabilityFunction,
   bookingFunction,
@@ -292,6 +293,18 @@ export async function processChatMessage(
           }
         }
 
+        if (appointment.patient.email) {
+          const doctor = await storage.getDoctorById(appointment.doctorId);
+          sendAppointmentCancelledEmail({
+            patientEmail: appointment.patient.email,
+            patientName: appointment.patient.name,
+            doctorName: doctor?.name || "Doctor",
+            date: new Date(appointment.date),
+            service: appointment.service,
+            referenceNumber: refNum,
+          }).catch((e) => console.error("Failed to send cancellation email:", e));
+        }
+
         cancelResult = JSON.stringify({
           success: true,
           message: `Appointment ${refNum} has been cancelled successfully.`,
@@ -428,6 +441,20 @@ export async function processChatMessage(
                   calErr,
                 );
               }
+            }
+
+            if (appointment.patient.email) {
+              const doctor = await storage.getDoctorById(appointment.doctorId);
+              sendAppointmentRescheduledEmail({
+                patientEmail: appointment.patient.email,
+                patientName: appointment.patient.name,
+                doctorName: doctor?.name || "Doctor",
+                oldDate: oldDate,
+                newDate: newDateTime,
+                service: appointment.service,
+                duration: duration,
+                referenceNumber: refNum,
+              }).catch((e) => console.error("Failed to send reschedule email:", e));
             }
 
             rescheduleResult = JSON.stringify({
@@ -719,6 +746,19 @@ export async function processChatMessage(
         time: bookingData.time,
         service: bookingData.service,
       };
+
+      const patientEmail = bookingData.patientEmail || patient.email;
+      if (patientEmail) {
+        sendAppointmentConfirmationEmail({
+          patientEmail,
+          patientName: bookingData.patientName,
+          doctorName: bookingData.doctorName,
+          date: appointmentDateTime,
+          service: bookingData.service,
+          duration: appointmentDuration,
+          referenceNumber: appointment.referenceNumber!,
+        }).catch((e) => console.error("Failed to send confirmation email:", e));
+      }
 
       const confirmationResponse = await openai.chat.completions.create({
         model: "gpt-4o",

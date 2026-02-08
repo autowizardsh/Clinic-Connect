@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { createCalendarEvent } from "../google-calendar";
+import { sendAppointmentConfirmationEmail, sendAppointmentCancelledEmail } from "../services/email";
 
 export function registerAdminRoutes(app: Express) {
   app.get("/api/admin/stats", requireAdmin, async (req, res) => {
@@ -256,7 +257,25 @@ export function registerAdminRoutes(app: Express) {
       } catch (calendarError) {
         console.error("Failed to sync to Google Calendar:", calendarError);
       }
-      
+
+      try {
+        const patient = await storage.getPatientById(patientId);
+        const doctor = await storage.getDoctorById(doctorId);
+        if (patient?.email && doctor) {
+          sendAppointmentConfirmationEmail({
+            patientEmail: patient.email,
+            patientName: patient.name,
+            doctorName: doctor.name,
+            date: appointmentDate,
+            service,
+            duration: appointmentDuration,
+            referenceNumber: appointment.referenceNumber || "",
+          }).catch((e) => console.error("Failed to send confirmation email:", e));
+        }
+      } catch (emailError) {
+        console.error("Failed to send confirmation email:", emailError);
+      }
+
       res.json(appointment);
     } catch (error) {
       console.error("Error creating appointment:", error);
@@ -281,6 +300,27 @@ export function registerAdminRoutes(app: Express) {
   app.delete("/api/admin/appointments/:id", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+
+      try {
+        const appt = await storage.getAppointmentById(id);
+        if (appt) {
+          const patient = await storage.getPatientById(appt.patientId);
+          const doctor = await storage.getDoctorById(appt.doctorId);
+          if (patient?.email && doctor) {
+            sendAppointmentCancelledEmail({
+              patientEmail: patient.email,
+              patientName: patient.name,
+              doctorName: doctor.name,
+              date: new Date(appt.date),
+              service: appt.service,
+              referenceNumber: appt.referenceNumber || "",
+            }).catch((e) => console.error("Failed to send cancellation email:", e));
+          }
+        }
+      } catch (emailError) {
+        console.error("Failed to send cancellation email:", emailError);
+      }
+
       await storage.deleteAppointment(id);
       res.json({ success: true });
     } catch (error) {

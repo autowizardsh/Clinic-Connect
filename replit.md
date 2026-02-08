@@ -124,6 +124,13 @@ shared/               # Shared types and database schema
   - Supports: text messages, interactive buttons (up to 3), interactive lists (up to 10 items)
   - Reuses the same AI chat engine (`server/routes/chat/engine.ts`) as the web widget
   - Sessions tracked in-memory per phone number with 30-minute timeout
+- **AWS SES**: Email notifications for appointment events (confirmation, reschedule, cancellation)
+  - Environment variables: `AWS_SES_ACCESS_KEY_ID`, `AWS_SES_SECRET_ACCESS_KEY`, `AWS_SES_REGION`, `AWS_SES_FROM_EMAIL`
+  - Service module: `server/services/email.ts`
+  - Sends HTML emails with clinic branding for: scheduled, rescheduled, and cancelled appointments
+  - Hooked into: `server/routes/admin.ts`, `server/routes/chat/engine.ts`, `server/routes/chat/handlers.ts`
+  - Gracefully skips if SES credentials not configured (logs warning instead of failing)
+  - Only sends if patient has an email address on file
 - **ffmpeg**: Required for WebM to WAV audio conversion (available on Replit)
 
 ### Key NPM Packages
