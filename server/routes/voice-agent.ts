@@ -98,6 +98,28 @@ export function registerVoiceAgentRoutes(app: Express) {
         });
       }
 
+      const trimmedName = (patientName || "").trim().toLowerCase();
+      const trimmedPhone = (patientPhone || "").trim();
+
+      if (trimmedName.length < 2) {
+        return res.status(400).json({ error: "Patient name is too short. Please provide a full name." });
+      }
+
+      const invalidNames = ["pending", "unknown", "test", "user", "patient", "name", "n/a", "na", "tbd", "to be determined"];
+      const nameParts = trimmedName.split(/\s+/);
+      if (nameParts.some((part: string) => invalidNames.includes(part)) || (nameParts.length >= 2 && nameParts[0] === nameParts[1])) {
+        return res.status(400).json({ error: "Please provide the patient's real full name" });
+      }
+
+      if (trimmedPhone.length < 6) {
+        return res.status(400).json({ error: "Phone number is too short. Please provide a valid phone number." });
+      }
+
+      const invalidPhones = ["0000000", "1234567", "pending", "unknown", "test", "n/a", "na", "tbd"];
+      if (invalidPhones.some((p) => trimmedPhone.toLowerCase().includes(p))) {
+        return res.status(400).json({ error: "Please provide a valid phone number" });
+      }
+
       const settings = await storage.getClinicSettings();
       const doctor = await storage.getDoctorById(doctorId);
 
@@ -380,7 +402,43 @@ export function registerVoiceAgentRoutes(app: Express) {
         return res.status(400).json({ error: "Cannot reschedule to a past date/time" });
       }
 
+      const settings = await storage.getClinicSettings();
       const duration = appointment.duration || 30;
+
+      const openTime = settings?.openTime || "09:00";
+      const closeTime = settings?.closeTime || "17:00";
+      const [openH, openM] = openTime.split(":").map(Number);
+      const [closeH, closeM] = closeTime.split(":").map(Number);
+      const [reqH, reqM] = newTime.split(":").map(Number);
+      const openMin = openH * 60 + openM;
+      const closeMin = closeH * 60 + closeM;
+      const reqMin = reqH * 60 + reqM;
+
+      if (reqMin < openMin || reqMin + duration > closeMin) {
+        return res.status(400).json({ error: `Time is outside working hours (${openTime} - ${closeTime})` });
+      }
+
+      const dayOfWeek = newDateTime.getDay();
+      const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
+      if (!workingDays.includes(dayOfWeek)) {
+        return res.status(400).json({ error: "Selected day is not a working day" });
+      }
+
+      const doctorUnavailability = await storage.getDoctorAvailabilityForDate(appointment.doctorId, newDate);
+      for (const block of doctorUnavailability) {
+        if (!block.isAvailable) {
+          const [bsH, bsM] = block.startTime.split(":").map(Number);
+          const [beH, beM] = block.endTime.split(":").map(Number);
+          const blockStart = bsH * 60 + bsM;
+          const blockEnd = beH * 60 + beM;
+          if (reqMin < blockEnd && reqMin + duration > blockStart) {
+            return res.status(400).json({
+              error: `Doctor is not available from ${block.startTime} to ${block.endTime}${block.reason ? ` (${block.reason})` : ""}`,
+            });
+          }
+        }
+      }
+
       const existingAppointments = await storage.getAppointmentsByDoctorId(appointment.doctorId);
       const conflicting = existingAppointments.find((apt) => {
         if (apt.id === appointment.id || apt.status === "cancelled") return false;
