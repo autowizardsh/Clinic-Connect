@@ -6,6 +6,7 @@ import { registerDoctorRoutes } from "./doctor";
 import { registerChatRoutes } from "./chat";
 import { registerPublicRoutes } from "./public";
 import { registerWhatsAppRoutes } from "./whatsapp";
+import { registerVoiceAgentRoutes } from "./voice-agent";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -19,6 +20,7 @@ export async function registerRoutes(
   registerChatRoutes(app);
   registerWhatsAppRoutes(app);
   registerPublicRoutes(app);
+  registerVoiceAgentRoutes(app);
 
   return httpServer;
 }
