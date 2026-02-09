@@ -68,7 +68,7 @@ export function registerVoiceAgentRoutes(app: Express) {
       }
 
       const settings = await storage.getClinicSettings();
-      const result = await getAvailableSlotsForDate(doctorId, date, settings);
+      const result = await getAvailableSlotsForDate(doctorId, date, settings || null);
 
       const doctor = await storage.getDoctorById(doctorId);
 

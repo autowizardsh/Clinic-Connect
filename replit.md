@@ -131,6 +131,13 @@ shared/               # Shared types and database schema
   - Hooked into: `server/routes/admin.ts`, `server/routes/chat/engine.ts`, `server/routes/chat/handlers.ts`
   - Gracefully skips if SES credentials not configured (logs warning instead of failing)
   - Only sends if patient has an email address on file
+- **Voice Agent API (ElevenLabs)**: Token-authenticated REST endpoints for voice agent integration
+  - Route module: `server/routes/voice-agent.ts`
+  - Environment variable: `VOICE_AGENT_API_TOKEN` (Bearer token for auth)
+  - Base path: `/api/voice/*`
+  - Endpoints: GET `/doctors`, GET `/services`, POST `/availability`, POST `/book`, POST `/lookup`, POST `/cancel`, POST `/reschedule`
+  - Replicates booking/cancel/reschedule logic from chat engine with full validation
+  - Includes Google Calendar sync and email notifications
 - **ffmpeg**: Required for WebM to WAV audio conversion (available on Replit)
 
 ### Key NPM Packages
