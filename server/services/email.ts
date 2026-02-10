@@ -70,6 +70,41 @@ This is an automated message from ${clinicName}. Please do not reply to this ema
 </html>`;
 }
 
+function appointmentDetailsTable(data: {
+  referenceNumber: string;
+  patientName: string;
+  doctorName: string;
+  date: Date;
+  service: string;
+  duration?: number;
+}, bgColor: string, borderColor: string): string {
+  const rows = [
+    { label: "Reference", value: data.referenceNumber, bold: true },
+    { label: "Patient", value: data.patientName },
+    { label: "Doctor", value: `Dr. ${data.doctorName}` },
+    { label: "Date", value: formatDate(data.date) },
+    { label: "Time", value: formatTime(data.date) },
+    { label: "Service", value: data.service },
+  ];
+  if (data.duration) {
+    rows.push({ label: "Duration", value: `${data.duration} minutes`, bold: false } as any);
+  }
+  const rowsHtml = rows.map(r =>
+    `<tr>
+<td style="padding:6px 0;font-size:13px;color:#6b7280;width:120px;">${r.label}</td>
+<td style="padding:6px 0;font-size:14px;color:#111827;${(r as any).bold ? 'font-weight:600;' : ''}">${r.value}</td>
+</tr>`
+  ).join("");
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${bgColor};border:1px solid ${borderColor};border-radius:6px;padding:20px;margin-bottom:24px;">
+<tr><td>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+${rowsHtml}
+</table>
+</td></tr>
+</table>`;
+}
+
 function scheduledEmailBody(data: {
   patientName: string;
   doctorName: string;
@@ -82,40 +117,27 @@ function scheduledEmailBody(data: {
 <h2 style="margin:0 0 8px;font-size:18px;color:#111827;">Appointment Confirmed</h2>
 <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">Hi ${data.patientName}, your appointment has been successfully booked.</p>
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0fdfa;border:1px solid #ccfbf1;border-radius:6px;padding:20px;margin-bottom:24px;">
-<tr><td>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;width:120px;">Reference</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;font-weight:600;">${data.referenceNumber}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Doctor</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">Dr. ${data.doctorName}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Date</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">${formatDate(data.date)}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Time</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">${formatTime(data.date)}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Service</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">${data.service}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Duration</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">${data.duration} minutes</td>
-</tr>
-</table>
-</td></tr>
-</table>
+${appointmentDetailsTable({ ...data, patientName: data.patientName }, "#f0fdfa", "#ccfbf1")}
 
 <p style="margin:0;font-size:13px;color:#6b7280;">
 Please save your reference number <strong>${data.referenceNumber}</strong> — you'll need it if you want to reschedule or cancel your appointment.
 </p>`;
+}
+
+function scheduledStaffEmailBody(data: {
+  patientName: string;
+  doctorName: string;
+  date: Date;
+  service: string;
+  duration: number;
+  referenceNumber: string;
+  recipientRole: string;
+}): string {
+  return `
+<h2 style="margin:0 0 8px;font-size:18px;color:#111827;">New Appointment Booked</h2>
+<p style="margin:0 0 24px;font-size:14px;color:#6b7280;">A new appointment has been booked. Here are the details:</p>
+
+${appointmentDetailsTable(data, "#f0fdfa", "#ccfbf1")}`;
 }
 
 function rescheduledEmailBody(data: {
@@ -139,36 +161,31 @@ function rescheduledEmailBody(data: {
 </td></tr>
 </table>
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0fdfa;border:1px solid #ccfbf1;border-radius:6px;padding:20px;margin-bottom:24px;">
+${appointmentDetailsTable({ ...data, date: data.newDate }, "#f0fdfa", "#ccfbf1")}`;
+}
+
+function rescheduledStaffEmailBody(data: {
+  patientName: string;
+  doctorName: string;
+  oldDate: Date;
+  newDate: Date;
+  service: string;
+  duration: number;
+  referenceNumber: string;
+}): string {
+  return `
+<h2 style="margin:0 0 8px;font-size:18px;color:#111827;">Appointment Rescheduled</h2>
+<p style="margin:0 0 24px;font-size:14px;color:#6b7280;">An appointment has been rescheduled. Here are the updated details:</p>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:16px;margin-bottom:16px;">
 <tr><td>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;width:120px;">Reference</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;font-weight:600;">${data.referenceNumber}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Doctor</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">Dr. ${data.doctorName}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">New Date</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">${formatDate(data.newDate)}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">New Time</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">${formatTime(data.newDate)}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Service</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">${data.service}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Duration</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">${data.duration} minutes</td>
-</tr>
-</table>
+<p style="margin:0;font-size:13px;color:#92400e;">
+<strong>Previous:</strong> ${formatDate(data.oldDate)} at ${formatTime(data.oldDate)}
+</p>
 </td></tr>
-</table>`;
+</table>
+
+${appointmentDetailsTable({ ...data, date: data.newDate }, "#f0fdfa", "#ccfbf1")}`;
 }
 
 function cancelledEmailBody(data: {
@@ -182,36 +199,25 @@ function cancelledEmailBody(data: {
 <h2 style="margin:0 0 8px;font-size:18px;color:#111827;">Appointment Cancelled</h2>
 <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">Hi ${data.patientName}, your appointment has been cancelled.</p>
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:20px;margin-bottom:24px;">
-<tr><td>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;width:120px;">Reference</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;font-weight:600;">${data.referenceNumber}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Doctor</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">Dr. ${data.doctorName}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Date</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">${formatDate(data.date)}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Time</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">${formatTime(data.date)}</td>
-</tr>
-<tr>
-<td style="padding:6px 0;font-size:13px;color:#6b7280;">Service</td>
-<td style="padding:6px 0;font-size:14px;color:#111827;">${data.service}</td>
-</tr>
-</table>
-</td></tr>
-</table>
+${appointmentDetailsTable(data, "#fef2f2", "#fecaca")}
 
 <p style="margin:0;font-size:13px;color:#6b7280;">
 If you'd like to book a new appointment, please use our chat or contact the clinic directly.
 </p>`;
+}
+
+function cancelledStaffEmailBody(data: {
+  patientName: string;
+  doctorName: string;
+  date: Date;
+  service: string;
+  referenceNumber: string;
+}): string {
+  return `
+<h2 style="margin:0 0 8px;font-size:18px;color:#111827;">Appointment Cancelled</h2>
+<p style="margin:0 0 24px;font-size:14px;color:#6b7280;">An appointment has been cancelled. Here are the details:</p>
+
+${appointmentDetailsTable(data, "#fef2f2", "#fecaca")}`;
 }
 
 async function sendEmail(to: string, subject: string, htmlBody: string): Promise<boolean> {
@@ -257,6 +263,49 @@ async function getClinicName(): Promise<string> {
   }
 }
 
+async function getAdminEmail(): Promise<string | null> {
+  try {
+    const settings = await storage.getClinicSettings();
+    return settings?.email || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getDoctorEmail(doctorName: string): Promise<string | null> {
+  try {
+    const allDoctors = await storage.getDoctors();
+    const doctor = allDoctors.find(d => d.name === doctorName);
+    return doctor?.email || null;
+  } catch {
+    return null;
+  }
+}
+
+async function sendStaffNotifications(
+  doctorName: string,
+  subject: string,
+  staffHtml: string,
+): Promise<void> {
+  const [doctorEmail, adminEmail] = await Promise.all([
+    getDoctorEmail(doctorName),
+    getAdminEmail(),
+  ]);
+
+  const sends: Promise<boolean>[] = [];
+
+  if (doctorEmail) {
+    sends.push(sendEmail(doctorEmail, subject, staffHtml));
+  }
+  if (adminEmail && adminEmail !== doctorEmail) {
+    sends.push(sendEmail(adminEmail, subject, staffHtml));
+  }
+
+  if (sends.length > 0) {
+    await Promise.allSettled(sends);
+  }
+}
+
 export async function sendAppointmentConfirmationEmail(data: {
   patientEmail: string;
   patientName: string;
@@ -267,13 +316,17 @@ export async function sendAppointmentConfirmationEmail(data: {
   referenceNumber: string;
 }): Promise<boolean> {
   const clinicName = await getClinicName();
-  const body = scheduledEmailBody(data);
-  const html = baseTemplate(clinicName, "Appointment Confirmed", body);
-  return sendEmail(
-    data.patientEmail,
-    `Appointment Confirmed — ${formatDate(data.date)} at ${formatTime(data.date)}`,
-    html,
-  );
+  const subject = `Appointment Confirmed — ${formatDate(data.date)} at ${formatTime(data.date)}`;
+
+  const patientBody = scheduledEmailBody(data);
+  const patientHtml = baseTemplate(clinicName, "Appointment Confirmed", patientBody);
+  const patientResult = sendEmail(data.patientEmail, subject, patientHtml);
+
+  const staffBody = scheduledStaffEmailBody({ ...data, recipientRole: "staff" });
+  const staffHtml = baseTemplate(clinicName, "New Appointment Booked", staffBody);
+  sendStaffNotifications(data.doctorName, `New Booking: ${data.patientName} — ${formatDate(data.date)} at ${formatTime(data.date)}`, staffHtml);
+
+  return patientResult;
 }
 
 export async function sendAppointmentRescheduledEmail(data: {
@@ -287,13 +340,17 @@ export async function sendAppointmentRescheduledEmail(data: {
   referenceNumber: string;
 }): Promise<boolean> {
   const clinicName = await getClinicName();
-  const body = rescheduledEmailBody(data);
-  const html = baseTemplate(clinicName, "Appointment Rescheduled", body);
-  return sendEmail(
-    data.patientEmail,
-    `Appointment Rescheduled — New: ${formatDate(data.newDate)} at ${formatTime(data.newDate)}`,
-    html,
-  );
+  const subject = `Appointment Rescheduled — New: ${formatDate(data.newDate)} at ${formatTime(data.newDate)}`;
+
+  const patientBody = rescheduledEmailBody(data);
+  const patientHtml = baseTemplate(clinicName, "Appointment Rescheduled", patientBody);
+  const patientResult = sendEmail(data.patientEmail, subject, patientHtml);
+
+  const staffBody = rescheduledStaffEmailBody(data);
+  const staffHtml = baseTemplate(clinicName, "Appointment Rescheduled", staffBody);
+  sendStaffNotifications(data.doctorName, `Rescheduled: ${data.patientName} — New: ${formatDate(data.newDate)} at ${formatTime(data.newDate)}`, staffHtml);
+
+  return patientResult;
 }
 
 export async function sendAppointmentCancelledEmail(data: {
@@ -305,11 +362,15 @@ export async function sendAppointmentCancelledEmail(data: {
   referenceNumber: string;
 }): Promise<boolean> {
   const clinicName = await getClinicName();
-  const body = cancelledEmailBody(data);
-  const html = baseTemplate(clinicName, "Appointment Cancelled", body);
-  return sendEmail(
-    data.patientEmail,
-    `Appointment Cancelled — ${data.referenceNumber}`,
-    html,
-  );
+  const subject = `Appointment Cancelled — ${data.referenceNumber}`;
+
+  const patientBody = cancelledEmailBody(data);
+  const patientHtml = baseTemplate(clinicName, "Appointment Cancelled", patientBody);
+  const patientResult = sendEmail(data.patientEmail, subject, patientHtml);
+
+  const staffBody = cancelledStaffEmailBody(data);
+  const staffHtml = baseTemplate(clinicName, "Appointment Cancelled", staffBody);
+  sendStaffNotifications(data.doctorName, `Cancelled: ${data.patientName} — ${data.referenceNumber}`, staffHtml);
+
+  return patientResult;
 }
