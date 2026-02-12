@@ -90,11 +90,11 @@ export function registerVoiceAgentRoutes(app: Express) {
     try {
       const { patientName, patientPhone, patientEmail, service, doctorId, date, time, notes } = req.body;
 
-      if (!patientName || !patientPhone || !service || !doctorId || !date || !time) {
+      if (!patientName || !patientPhone || !patientEmail || !service || !doctorId || !date || !time) {
         return res.status(400).json({
           error: "Missing required fields",
-          required: ["patientName", "patientPhone", "service", "doctorId", "date", "time"],
-          optional: ["patientEmail", "notes"],
+          required: ["patientName", "patientPhone", "patientEmail", "service", "doctorId", "date", "time"],
+          optional: ["notes"],
         });
       }
 

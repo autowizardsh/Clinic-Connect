@@ -40,7 +40,7 @@ export const bookingFunction = {
         },
         patientEmail: {
           type: "string",
-          description: "Email address of the patient (optional)",
+          description: "Patient's REAL email address - REQUIRED for confirmation email and calendar invite - NEVER use placeholder",
         },
         service: {
           type: "string",
@@ -70,6 +70,7 @@ export const bookingFunction = {
       required: [
         "patientName",
         "patientPhone",
+        "patientEmail",
         "service",
         "doctorId",
         "date",
@@ -187,7 +188,7 @@ export const bookingFunctionSimple = {
         time: { type: "string", description: "HH:MM format" },
         notes: { type: "string" },
       },
-      required: ["patientName", "patientPhone", "service", "doctorId", "date", "time"],
+      required: ["patientName", "patientPhone", "patientEmail", "service", "doctorId", "date", "time"],
     },
   },
 };
