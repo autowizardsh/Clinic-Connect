@@ -1,4 +1,4 @@
-import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+import { SESClient, SendRawEmailCommand } from "@aws-sdk/client-ses";
 import { storage } from "../storage";
 
 let sesClient: SESClient | null = null;
@@ -34,6 +34,66 @@ function formatTime(date: Date): string {
   const ampm = hours >= 12 ? "PM" : "AM";
   const displayHour = hours % 12 || 12;
   return `${displayHour}:${minutes} ${ampm}`;
+}
+
+function formatICSDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const h = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  const s = String(date.getSeconds()).padStart(2, "0");
+  return `${y}${m}${d}T${h}${min}${s}`;
+}
+
+function generateICSContent(data: {
+  referenceNumber: string;
+  patientName: string;
+  doctorName: string;
+  date: Date;
+  duration: number;
+  service: string;
+  clinicName: string;
+  clinicAddress?: string;
+  timezone: string;
+  method: "REQUEST" | "CANCEL";
+}): string {
+  const startDate = formatICSDate(data.date);
+  const endDate = new Date(data.date.getTime() + data.duration * 60 * 1000);
+  const endDateStr = formatICSDate(endDate);
+  const now = formatICSDate(new Date());
+  const uid = `${data.referenceNumber}@dentalclinic`;
+  const status = data.method === "CANCEL" ? "CANCELLED" : "CONFIRMED";
+  const doctorDisplay = data.doctorName.startsWith("Dr.") ? data.doctorName : `Dr. ${data.doctorName}`;
+  const sequence = Math.floor(Date.now() / 1000);
+
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//DentalClinic//Appointment//EN",
+    `METHOD:${data.method}`,
+    "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:${uid}`,
+    `DTSTAMP:${now}`,
+    `DTSTART;TZID=${data.timezone}:${startDate}`,
+    `DTEND;TZID=${data.timezone}:${endDateStr}`,
+    `SUMMARY:${data.service} - ${data.clinicName}`,
+    `DESCRIPTION:Appointment with ${doctorDisplay}\\nService: ${data.service}\\nReference: ${data.referenceNumber}\\nPatient: ${data.patientName}`,
+    `LOCATION:${data.clinicAddress || data.clinicName}`,
+    `ORGANIZER;CN=${data.clinicName}:MAILTO:${getFromEmail() || "noreply@clinic.com"}`,
+    `STATUS:${status}`,
+    `SEQUENCE:${sequence}`,
+    "BEGIN:VALARM",
+    "TRIGGER:-PT30M",
+    "ACTION:DISPLAY",
+    `DESCRIPTION:Reminder: ${data.service} at ${data.clinicName} in 30 minutes`,
+    "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ];
+
+  return lines.join("\r\n");
 }
 
 function baseTemplate(clinicName: string, title: string, body: string): string {
@@ -220,7 +280,70 @@ function cancelledStaffEmailBody(data: {
 ${appointmentDetailsTable(data, "#fef2f2", "#fecaca")}`;
 }
 
-async function sendEmail(to: string, subject: string, htmlBody: string): Promise<boolean> {
+function buildRawEmail(options: {
+  from: string;
+  to: string;
+  subject: string;
+  htmlBody: string;
+  icsContent?: string;
+  icsFilename?: string;
+  icsMethod?: string;
+}): string {
+  const boundary = `----=_Part_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+  const calBoundary = `----=_Cal_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+
+  const headers = [
+    `From: ${options.from}`,
+    `To: ${options.to}`,
+    `Subject: ${options.subject}`,
+    `MIME-Version: 1.0`,
+  ];
+
+  if (options.icsContent && options.icsMethod) {
+    headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+
+    const icsBase64 = Buffer.from(options.icsContent).toString("base64");
+
+    const body = [
+      `--${boundary}`,
+      `Content-Type: multipart/alternative; boundary="${calBoundary}"`,
+      ``,
+      `--${calBoundary}`,
+      `Content-Type: text/html; charset=UTF-8`,
+      `Content-Transfer-Encoding: 7bit`,
+      ``,
+      options.htmlBody,
+      ``,
+      `--${calBoundary}`,
+      `Content-Type: text/calendar; charset=UTF-8; method=${options.icsMethod}`,
+      `Content-Transfer-Encoding: base64`,
+      ``,
+      icsBase64,
+      ``,
+      `--${calBoundary}--`,
+      ``,
+      `--${boundary}`,
+      `Content-Type: text/calendar; charset=UTF-8; method=${options.icsMethod}; name="${options.icsFilename || "invite.ics"}"`,
+      `Content-Disposition: attachment; filename="${options.icsFilename || "invite.ics"}"`,
+      `Content-Transfer-Encoding: base64`,
+      ``,
+      icsBase64,
+      ``,
+      `--${boundary}--`,
+    ];
+
+    return [...headers, ``, ...body].join("\r\n");
+  } else {
+    headers.push(`Content-Type: text/html; charset=UTF-8`);
+    return [...headers, ``, options.htmlBody].join("\r\n");
+  }
+}
+
+async function sendEmail(to: string, subject: string, htmlBody: string, icsOptions?: {
+  icsContent: string;
+  icsFilename: string;
+  icsMethod: string;
+}): Promise<boolean> {
   const client = getSESClient();
   if (!client) {
     console.log("SES not configured (missing credentials) — skipping email to", to);
@@ -234,14 +357,19 @@ async function sendEmail(to: string, subject: string, htmlBody: string): Promise
   }
 
   try {
-    const command = new SendEmailCommand({
-      Source: fromEmail,
-      Destination: { ToAddresses: [to] },
-      Message: {
-        Subject: { Data: subject, Charset: "UTF-8" },
-        Body: {
-          Html: { Data: htmlBody, Charset: "UTF-8" },
-        },
+    const rawMessage = buildRawEmail({
+      from: fromEmail,
+      to,
+      subject,
+      htmlBody,
+      icsContent: icsOptions?.icsContent,
+      icsFilename: icsOptions?.icsFilename,
+      icsMethod: icsOptions?.icsMethod,
+    });
+
+    const command = new SendRawEmailCommand({
+      RawMessage: {
+        Data: Buffer.from(rawMessage),
       },
     });
 
@@ -260,6 +388,19 @@ async function getClinicName(): Promise<string> {
     return settings?.clinicName || "Dental Clinic";
   } catch {
     return "Dental Clinic";
+  }
+}
+
+async function getClinicInfo(): Promise<{ clinicName: string; address: string; timezone: string }> {
+  try {
+    const settings = await storage.getClinicSettings();
+    return {
+      clinicName: settings?.clinicName || "Dental Clinic",
+      address: settings?.address || "Dental Clinic",
+      timezone: settings?.timezone || "Europe/Amsterdam",
+    };
+  } catch {
+    return { clinicName: "Dental Clinic", address: "Dental Clinic", timezone: "Europe/Amsterdam" };
   }
 }
 
@@ -290,6 +431,7 @@ async function sendStaffNotifications(
   doctorName: string,
   subject: string,
   staffHtml: string,
+  icsOptions?: { icsContent: string; icsFilename: string; icsMethod: string },
 ): Promise<void> {
   const [doctorEmail, adminEmail] = await Promise.all([
     getDoctorEmail(doctorName),
@@ -299,10 +441,10 @@ async function sendStaffNotifications(
   const sends: Promise<boolean>[] = [];
 
   if (doctorEmail) {
-    sends.push(sendEmail(doctorEmail, subject, staffHtml));
+    sends.push(sendEmail(doctorEmail, subject, staffHtml, icsOptions));
   }
   if (adminEmail && adminEmail !== doctorEmail) {
-    sends.push(sendEmail(adminEmail, subject, staffHtml));
+    sends.push(sendEmail(adminEmail, subject, staffHtml, icsOptions));
   }
 
   if (sends.length > 0) {
@@ -319,16 +461,29 @@ export async function sendAppointmentConfirmationEmail(data: {
   duration: number;
   referenceNumber: string;
 }): Promise<boolean> {
-  const clinicName = await getClinicName();
+  const clinic = await getClinicInfo();
   const subject = `Appointment Confirmed — ${formatDate(data.date)} at ${formatTime(data.date)}`;
 
+  const icsContent = generateICSContent({
+    ...data,
+    clinicName: clinic.clinicName,
+    clinicAddress: clinic.address,
+    timezone: clinic.timezone,
+    method: "REQUEST",
+  });
+  const icsOptions = {
+    icsContent,
+    icsFilename: "appointment.ics",
+    icsMethod: "REQUEST",
+  };
+
   const patientBody = scheduledEmailBody(data);
-  const patientHtml = baseTemplate(clinicName, "Appointment Confirmed", patientBody);
-  const patientResult = sendEmail(data.patientEmail, subject, patientHtml);
+  const patientHtml = baseTemplate(clinic.clinicName, "Appointment Confirmed", patientBody);
+  const patientResult = sendEmail(data.patientEmail, subject, patientHtml, icsOptions);
 
   const staffBody = scheduledStaffEmailBody({ ...data, recipientRole: "staff" });
-  const staffHtml = baseTemplate(clinicName, "New Appointment Booked", staffBody);
-  sendStaffNotifications(data.doctorName, `New Booking: ${data.patientName} — ${formatDate(data.date)} at ${formatTime(data.date)}`, staffHtml);
+  const staffHtml = baseTemplate(clinic.clinicName, "New Appointment Booked", staffBody);
+  sendStaffNotifications(data.doctorName, `New Booking: ${data.patientName} — ${formatDate(data.date)} at ${formatTime(data.date)}`, staffHtml, icsOptions);
 
   return patientResult;
 }
@@ -343,16 +498,30 @@ export async function sendAppointmentRescheduledEmail(data: {
   duration: number;
   referenceNumber: string;
 }): Promise<boolean> {
-  const clinicName = await getClinicName();
+  const clinic = await getClinicInfo();
   const subject = `Appointment Rescheduled — New: ${formatDate(data.newDate)} at ${formatTime(data.newDate)}`;
 
+  const icsContent = generateICSContent({
+    ...data,
+    date: data.newDate,
+    clinicName: clinic.clinicName,
+    clinicAddress: clinic.address,
+    timezone: clinic.timezone,
+    method: "REQUEST",
+  });
+  const icsOptions = {
+    icsContent,
+    icsFilename: "appointment-updated.ics",
+    icsMethod: "REQUEST",
+  };
+
   const patientBody = rescheduledEmailBody(data);
-  const patientHtml = baseTemplate(clinicName, "Appointment Rescheduled", patientBody);
-  const patientResult = sendEmail(data.patientEmail, subject, patientHtml);
+  const patientHtml = baseTemplate(clinic.clinicName, "Appointment Rescheduled", patientBody);
+  const patientResult = sendEmail(data.patientEmail, subject, patientHtml, icsOptions);
 
   const staffBody = rescheduledStaffEmailBody(data);
-  const staffHtml = baseTemplate(clinicName, "Appointment Rescheduled", staffBody);
-  sendStaffNotifications(data.doctorName, `Rescheduled: ${data.patientName} — New: ${formatDate(data.newDate)} at ${formatTime(data.newDate)}`, staffHtml);
+  const staffHtml = baseTemplate(clinic.clinicName, "Appointment Rescheduled", staffBody);
+  sendStaffNotifications(data.doctorName, `Rescheduled: ${data.patientName} — New: ${formatDate(data.newDate)} at ${formatTime(data.newDate)}`, staffHtml, icsOptions);
 
   return patientResult;
 }
@@ -365,16 +534,30 @@ export async function sendAppointmentCancelledEmail(data: {
   service: string;
   referenceNumber: string;
 }): Promise<boolean> {
-  const clinicName = await getClinicName();
+  const clinic = await getClinicInfo();
   const subject = `Appointment Cancelled — ${data.referenceNumber}`;
 
+  const icsContent = generateICSContent({
+    ...data,
+    duration: 15,
+    clinicName: clinic.clinicName,
+    clinicAddress: clinic.address,
+    timezone: clinic.timezone,
+    method: "CANCEL",
+  });
+  const icsOptions = {
+    icsContent,
+    icsFilename: "appointment-cancelled.ics",
+    icsMethod: "CANCEL",
+  };
+
   const patientBody = cancelledEmailBody(data);
-  const patientHtml = baseTemplate(clinicName, "Appointment Cancelled", patientBody);
-  const patientResult = sendEmail(data.patientEmail, subject, patientHtml);
+  const patientHtml = baseTemplate(clinic.clinicName, "Appointment Cancelled", patientBody);
+  const patientResult = sendEmail(data.patientEmail, subject, patientHtml, icsOptions);
 
   const staffBody = cancelledStaffEmailBody(data);
-  const staffHtml = baseTemplate(clinicName, "Appointment Cancelled", staffBody);
-  sendStaffNotifications(data.doctorName, `Cancelled: ${data.patientName} — ${data.referenceNumber}`, staffHtml);
+  const staffHtml = baseTemplate(clinic.clinicName, "Appointment Cancelled", staffBody);
+  sendStaffNotifications(data.doctorName, `Cancelled: ${data.patientName} — ${data.referenceNumber}`, staffHtml, icsOptions);
 
   return patientResult;
 }
