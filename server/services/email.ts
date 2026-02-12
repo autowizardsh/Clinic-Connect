@@ -275,7 +275,11 @@ async function getAdminEmail(): Promise<string | null> {
 async function getDoctorEmail(doctorName: string): Promise<string | null> {
   try {
     const allDoctors = await storage.getDoctors();
-    const doctor = allDoctors.find(d => d.name === doctorName);
+    const normalizedName = doctorName.replace(/^Dr\.?\s*/i, "").trim().toLowerCase();
+    const doctor = allDoctors.find(d => {
+      const dbName = d.name.replace(/^Dr\.?\s*/i, "").trim().toLowerCase();
+      return dbName === normalizedName;
+    });
     return doctor?.email || null;
   } catch {
     return null;
