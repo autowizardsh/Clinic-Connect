@@ -13,7 +13,7 @@ import {
   checkAvailabilityFunctionSimple,
   bookingFunctionSimple,
 } from "./tools";
-import { buildSystemPrompt, buildSimpleSystemPrompt } from "./prompts";
+import { buildSystemPrompt } from "./prompts";
 import { findAvailableSlots, getAvailableSlotsForDate } from "./availability";
 import { determineQuickReplies } from "./quickReplies";
 
@@ -841,19 +841,21 @@ export function registerChatRoutes(app: Express) {
       const today = formatLocalDate(now);
       const tomorrow = new Date(now);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const dayAfterTomorrow = new Date(now);
+      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
       const currentDayOfWeek = now.getDay();
 
-      const systemPrompt = buildSimpleSystemPrompt({
+      const systemPrompt = buildSystemPrompt({
         language,
         clinicName: settings?.clinicName || (language === "nl" ? "de tandartskliniek" : "the dental clinic"),
         services,
-        activeDoctors: activeDoctors.map(d => ({ id: d.id, name: d.name })),
+        activeDoctors: activeDoctors.map(d => ({ id: d.id, name: d.name, specialty: d.specialty })),
         openTime: settings?.openTime || "09:00",
         closeTime: settings?.closeTime || "17:00",
         workingDays: settings?.workingDays || [1, 2, 3, 4, 5, 6],
         today,
         tomorrow: formatLocalDate(tomorrow),
+        dayAfterTomorrow: formatLocalDate(dayAfterTomorrow),
         currentDayOfWeek,
       });
 
