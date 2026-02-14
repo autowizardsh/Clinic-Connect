@@ -9,9 +9,10 @@ import {
   lookupAppointmentFunction,
   cancelAppointmentFunction,
   rescheduleAppointmentFunction,
+  findEmergencySlotFunction,
 } from "./tools";
 import { buildSystemPrompt } from "./prompts";
-import { findAvailableSlots, getAvailableSlotsForDate } from "./availability";
+import { findAvailableSlots, getAvailableSlotsForDate, findEmergencySlot } from "./availability";
 import { determineQuickReplies } from "./quickReplies";
 
 export interface ChatEngineResult {
@@ -96,6 +97,7 @@ export async function processChatMessage(
     lookupAppointmentFunction,
     cancelAppointmentFunction,
     rescheduleAppointmentFunction,
+    findEmergencySlotFunction,
   ];
 
   let initialResponse = await openai.chat.completions.create({
@@ -108,6 +110,40 @@ export async function processChatMessage(
   let responseMessage = initialResponse.choices[0]?.message;
   let fullResponse = "";
   let bookingResult: ChatEngineResult["booking"] = null;
+
+  if (
+    responseMessage?.tool_calls &&
+    responseMessage.tool_calls.length > 0 &&
+    (responseMessage.tool_calls[0] as any)?.function?.name ===
+      "find_emergency_slot"
+  ) {
+    const emergencyToolCall = responseMessage.tool_calls[0] as {
+      id: string;
+      function: { name: string; arguments: string };
+    };
+
+    try {
+      const emergencyResult = await findEmergencySlot(settings || null);
+
+      currentMessages.push(responseMessage);
+      currentMessages.push({
+        role: "tool",
+        tool_call_id: emergencyToolCall.id,
+        content: JSON.stringify(emergencyResult),
+      });
+
+      const emergencyFollowUp = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: currentMessages,
+        tools: allTools,
+        tool_choice: "auto",
+      });
+
+      responseMessage = emergencyFollowUp.choices[0]?.message;
+    } catch (e) {
+      console.error("Error finding emergency slot:", e);
+    }
+  }
 
   if (
     responseMessage?.tool_calls &&

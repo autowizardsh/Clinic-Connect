@@ -177,11 +177,13 @@ async function handleIncomingMessage(from: string, messageObj: any) {
     const welcomeReplies = language === "nl"
       ? [
           { label: "Afspraak maken", value: "Ik wil een afspraak maken" },
+          { label: "Spoedafspraak", value: "Ik heb een spoedgeval en heb zo snel mogelijk een afspraak nodig" },
           { label: "Verzetten", value: "Ik wil mijn afspraak verzetten" },
           { label: "Annuleren", value: "Ik wil mijn afspraak annuleren" },
         ]
       : [
           { label: "Book appointment", value: "I would like to book an appointment" },
+          { label: "Emergency", value: "I need an emergency appointment as soon as possible" },
           { label: "Reschedule", value: "I want to reschedule my appointment" },
           { label: "Cancel", value: "I want to cancel my appointment" },
         ];

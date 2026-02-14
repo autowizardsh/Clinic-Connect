@@ -126,12 +126,14 @@ export async function determineQuickReplies(
     return language === "nl"
       ? [
           { label: "Afspraak maken", value: "Ik wil een afspraak maken" },
+          { label: "Spoedafspraak", value: "Ik heb een spoedgeval en heb zo snel mogelijk een afspraak nodig" },
           { label: "Afspraak verzetten", value: "Ik wil mijn afspraak verzetten" },
           { label: "Afspraak annuleren", value: "Ik wil mijn afspraak annuleren" },
           { label: "Andere vraag", value: "Ik heb een andere vraag" },
         ]
       : [
           { label: "Book an appointment", value: "I would like to book an appointment" },
+          { label: "Emergency booking", value: "I need an emergency appointment as soon as possible" },
           { label: "Reschedule appointment", value: "I want to reschedule my appointment" },
           { label: "Cancel appointment", value: "I want to cancel my appointment" },
           { label: "Other question", value: "I have another question" },

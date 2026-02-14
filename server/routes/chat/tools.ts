@@ -154,6 +154,20 @@ export const rescheduleAppointmentFunction = {
   },
 };
 
+export const findEmergencySlotFunction = {
+  type: "function" as const,
+  function: {
+    name: "find_emergency_slot",
+    description:
+      "Find the nearest available emergency appointment slot for TODAY. Searches across ALL doctors to find the soonest available time. Use this when a patient needs an urgent or emergency appointment. After getting the result, proceed to collect patient details and book using book_appointment.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+};
+
 export const checkAvailabilityFunctionSimple = {
   type: "function" as const,
   function: {

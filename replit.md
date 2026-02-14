@@ -12,6 +12,7 @@ Key capabilities:
 - Doctor portal for viewing schedules and managing availability
 - Session-based authentication with role-based access control (admin/doctor)
 - OpenAI integration for conversational AI features
+- Emergency booking: finds nearest available slot TODAY across all doctors
 - Automated appointment reminders via email and WhatsApp
 
 ### Appointment Reference Numbers
