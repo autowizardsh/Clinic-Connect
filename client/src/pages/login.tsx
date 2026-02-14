@@ -59,7 +59,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="h-full overflow-auto bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col">
       <nav className="border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16 gap-4">

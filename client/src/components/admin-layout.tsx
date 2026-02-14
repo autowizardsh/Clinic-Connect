@@ -37,8 +37,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <SidebarProvider style={sidebarStyle as React.CSSProperties}>
-      <div className="flex h-screen w-full overflow-hidden">
+    <SidebarProvider style={sidebarStyle as React.CSSProperties} className="!min-h-0 h-screen">
+      <div className="flex h-full w-full overflow-hidden">
         <Sidebar>
           <SidebarHeader className="p-4">
             <Link href="/admin">
