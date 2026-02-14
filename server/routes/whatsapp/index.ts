@@ -36,7 +36,7 @@ const whatsappSessions: Map<
   { sessionId: string; language: string; lastActivity: number }
 > = new Map();
 
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 const pendingQuickReplies: Map<
   string,
