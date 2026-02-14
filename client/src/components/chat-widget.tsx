@@ -43,7 +43,7 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
     if (isOpen && !sessionId) {
       initializeSession();
     }
-  }, [isOpen]);
+  }, [isOpen, sessionId]);
 
   useEffect(() => {
     setTimeout(() => {
