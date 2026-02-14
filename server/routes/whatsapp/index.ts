@@ -174,18 +174,34 @@ async function handleIncomingMessage(from: string, messageObj: any) {
         ? `Welkom bij ${clinicName}! Ik ben uw AI-assistent via WhatsApp. Hoe kan ik u helpen?`
         : `Welcome to ${clinicName}! I'm your AI assistant on WhatsApp. How can I help you?`;
 
+    const welcomeReplies = language === "nl"
+      ? [
+          { label: "Afspraak maken", value: "Ik wil een afspraak maken" },
+          { label: "Verzetten", value: "Ik wil mijn afspraak verzetten" },
+          { label: "Annuleren", value: "Ik wil mijn afspraak annuleren" },
+        ]
+      : [
+          { label: "Book appointment", value: "I would like to book an appointment" },
+          { label: "Reschedule", value: "I want to reschedule my appointment" },
+          { label: "Cancel", value: "I want to cancel my appointment" },
+        ];
+
+    pendingQuickReplies.set(from, welcomeReplies);
+
     try {
-      await sendTextMessage(from, welcome);
+      const formatted = formatQuickRepliesForWhatsApp(
+        from,
+        welcome,
+        welcomeReplies,
+        clinicName,
+      );
+      await formatted.send();
     } catch (e) {
       console.error("Failed to send welcome message:", e);
     }
 
-    if (
-      messageText.toLowerCase() === "hi" ||
-      messageText.toLowerCase() === "hello" ||
-      messageText.toLowerCase() === "hallo" ||
-      messageText.toLowerCase() === "start"
-    ) {
+    const greetings = ["hi", "hello", "hallo", "start", "hey", "hoi"];
+    if (greetings.includes(messageText.toLowerCase().trim())) {
       return;
     }
   }
