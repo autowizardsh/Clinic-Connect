@@ -4,6 +4,7 @@ import { getAvailableSlotsForDate, findAvailableSlots } from "./chat/availabilit
 import { createCalendarEvent, deleteCalendarEvent } from "../google-calendar";
 import { sendAppointmentConfirmationEmail, sendAppointmentCancelledEmail, sendAppointmentRescheduledEmail } from "../services/email";
 import { scheduleRemindersForAppointment, rescheduleRemindersForAppointment, cancelRemindersForAppointment } from "../services/reminders";
+import { clinicTimeToUTC, isClinicTimePast, getNowInTimezone } from "../utils/timezone";
 
 function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -128,18 +129,16 @@ export function registerVoiceAgentRoutes(app: Express) {
         return res.status(400).json({ error: "Doctor not found or inactive" });
       }
 
-      const appointmentDateTime = new Date(`${date}T${time}:00`);
+      const clinicTimezone = settings?.timezone || "Europe/Amsterdam";
+      const appointmentDateTime = clinicTimeToUTC(date, time, clinicTimezone);
       const appointmentDuration = settings?.appointmentDuration || 30;
-      const now = new Date();
+      const clinicNow = getNowInTimezone(clinicTimezone);
 
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const appointmentDate = new Date(appointmentDateTime.getFullYear(), appointmentDateTime.getMonth(), appointmentDateTime.getDate());
-
-      if (appointmentDate < todayStart) {
+      if (date < clinicNow.dateStr) {
         return res.status(400).json({ error: "Cannot book appointments in the past" });
       }
 
-      if (appointmentDate.getTime() === todayStart.getTime() && appointmentDateTime.getTime() < now.getTime()) {
+      if (date === clinicNow.dateStr && isClinicTimePast(date, time, clinicTimezone)) {
         return res.status(400).json({ error: "This time has already passed today" });
       }
 
@@ -156,7 +155,7 @@ export function registerVoiceAgentRoutes(app: Express) {
         return res.status(400).json({ error: `Time is outside working hours (${openTime} - ${closeTime})` });
       }
 
-      const dayOfWeek = appointmentDateTime.getDay();
+      const dayOfWeek = new Date(date + "T12:00:00").getDay();
       const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
       if (!workingDays.includes(dayOfWeek)) {
         return res.status(400).json({ error: "Selected day is not a working day" });
@@ -189,7 +188,7 @@ export function registerVoiceAgentRoutes(app: Express) {
 
       if (conflicting) {
         const alternativeSlots = await findAvailableSlots(
-          doctorId, date, openMin, closeMin, appointmentDuration, existingAppointments, workingDays,
+          doctorId, date, openMin, closeMin, appointmentDuration, existingAppointments, workingDays, clinicTimezone,
         );
         return res.status(409).json({
           error: "Time slot is already booked",
@@ -224,7 +223,7 @@ export function registerVoiceAgentRoutes(app: Express) {
             doctor.googleRefreshToken,
             doctor.googleCalendarId || "primary",
             { patientName, doctorName: doctor.name, date, time, service, notes, duration: appointmentDuration },
-            "Europe/Amsterdam",
+            clinicTimezone,
           );
           await storage.updateAppointment(appointment.id, { googleEventId: event.id });
         }
@@ -406,12 +405,13 @@ export function registerVoiceAgentRoutes(app: Express) {
         return res.status(400).json({ error: "Cannot reschedule a cancelled appointment" });
       }
 
-      const newDateTime = new Date(`${newDate}T${newTime}:00`);
-      if (newDateTime <= new Date()) {
+      const settings = await storage.getClinicSettings();
+      const clinicTimezone = settings?.timezone || "Europe/Amsterdam";
+      const newDateTime = clinicTimeToUTC(newDate, newTime, clinicTimezone);
+      if (isClinicTimePast(newDate, newTime, clinicTimezone)) {
         return res.status(400).json({ error: "Cannot reschedule to a past date/time" });
       }
 
-      const settings = await storage.getClinicSettings();
       const duration = appointment.duration || 30;
 
       const openTime = settings?.openTime || "09:00";
@@ -427,7 +427,7 @@ export function registerVoiceAgentRoutes(app: Express) {
         return res.status(400).json({ error: `Time is outside working hours (${openTime} - ${closeTime})` });
       }
 
-      const dayOfWeek = newDateTime.getDay();
+      const dayOfWeek = new Date(newDate + "T12:00:00").getDay();
       const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
       if (!workingDays.includes(dayOfWeek)) {
         return res.status(400).json({ error: "Selected day is not a working day" });
@@ -485,7 +485,7 @@ export function registerVoiceAgentRoutes(app: Express) {
               service: appointment.service,
               duration,
             },
-            "Europe/Amsterdam",
+            clinicTimezone,
           );
           await storage.updateAppointment(appointment.id, { googleEventId: event.id });
         } catch (calErr) {

@@ -1,7 +1,8 @@
 import { storage } from "../../storage";
+import { getNowInTimezone, getDateInTimezone, getTimeInTimezone } from "../../utils/timezone";
 
 export async function findEmergencySlot(
-  settings: { openTime?: string; closeTime?: string; appointmentDuration?: number; workingDays?: number[] | null } | null,
+  settings: { openTime?: string; closeTime?: string; appointmentDuration?: number; workingDays?: number[] | null; timezone?: string | null } | null,
 ): Promise<{
   found: boolean;
   doctorId?: number;
@@ -11,10 +12,11 @@ export async function findEmergencySlot(
   time?: string;
   message: string;
 }> {
-  const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const timezone = settings?.timezone || "Europe/Amsterdam";
+  const clinicNow = getNowInTimezone(timezone);
+  const todayStr = clinicNow.dateStr;
   const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
-  const dayOfWeek = now.getDay();
+  const dayOfWeek = clinicNow.dayOfWeek;
 
   if (!workingDays.includes(dayOfWeek)) {
     return { found: false, message: "Today is not a working day. Please call our emergency line or try again on the next working day." };
@@ -28,7 +30,7 @@ export async function findEmergencySlot(
   const closeMinutes = closeH * 60 + closeM;
   const duration = settings?.appointmentDuration || 30;
 
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const currentMinutes = clinicNow.hours * 60 + clinicNow.minutes;
   const startFrom = Math.max(currentMinutes + 15, openMinutes);
 
   if (startFrom + duration > closeMinutes) {
@@ -51,8 +53,7 @@ export async function findEmergencySlot(
     const appointments = await storage.getAppointmentsByDoctorId(doctor.id);
     const todayAppointments = appointments.filter((apt) => {
       if (apt.status === "cancelled") return false;
-      const aptDate = new Date(apt.date);
-      const aptDateStr = `${aptDate.getFullYear()}-${String(aptDate.getMonth() + 1).padStart(2, "0")}-${String(aptDate.getDate()).padStart(2, "0")}`;
+      const aptDateStr = getDateInTimezone(new Date(apt.date), timezone);
       return aptDateStr === todayStr;
     });
 
@@ -72,8 +73,8 @@ export async function findEmergencySlot(
       if (isBlocked) continue;
 
       const isBooked = todayAppointments.some((apt) => {
-        const aptDate = new Date(apt.date);
-        const aptStart = aptDate.getHours() * 60 + aptDate.getMinutes();
+        const aptTime = getTimeInTimezone(new Date(apt.date), timezone);
+        const aptStart = aptTime.hours * 60 + aptTime.minutes;
         const aptEnd = aptStart + apt.duration;
         return time < aptEnd && slotEnd > aptStart;
       });
@@ -117,6 +118,7 @@ export async function findAvailableSlots(
   duration: number,
   existingAppointments: any[],
   workingDays: number[],
+  timezone: string = "Europe/Amsterdam",
 ): Promise<{ date: string; time: string }[]> {
   const availableSlots: { date: string; time: string }[] = [];
   const slotInterval = 30;
@@ -126,7 +128,7 @@ export async function findAvailableSlots(
     dayOffset <= 7 && availableSlots.length < 3;
     dayOffset++
   ) {
-    const checkDate = new Date(requestedDate);
+    const checkDate = new Date(requestedDate + "T12:00:00");
     checkDate.setDate(checkDate.getDate() + dayOffset);
     const dateStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
     const dayOfWeek = checkDate.getDay();
@@ -137,8 +139,7 @@ export async function findAvailableSlots(
 
     const dayAppointments = existingAppointments.filter((apt) => {
       if (apt.status === "cancelled") return false;
-      const aptDate = new Date(apt.date);
-      const aptDateLocalStr = `${aptDate.getFullYear()}-${String(aptDate.getMonth() + 1).padStart(2, '0')}-${String(aptDate.getDate()).padStart(2, '0')}`;
+      const aptDateLocalStr = getDateInTimezone(new Date(apt.date), timezone);
       return aptDateLocalStr === dateStr;
     });
 
@@ -167,9 +168,8 @@ export async function findAvailableSlots(
       if (isBlocked) continue;
 
       const hasConflict = dayAppointments.some((apt) => {
-        const aptDate = new Date(apt.date);
-        const aptStartMinutes =
-          aptDate.getHours() * 60 + aptDate.getMinutes();
+        const aptTime = getTimeInTimezone(new Date(apt.date), timezone);
+        const aptStartMinutes = aptTime.hours * 60 + aptTime.minutes;
         const aptEndMinutes = aptStartMinutes + apt.duration;
         return slotStart < aptEndMinutes && slotEnd > aptStartMinutes;
       });
@@ -189,8 +189,9 @@ export async function findAvailableSlots(
 export async function getAvailableSlotsForDate(
   doctorId: number,
   dateStr: string,
-  settings: { openTime?: string; closeTime?: string; appointmentDuration?: number } | null,
+  settings: { openTime?: string; closeTime?: string; appointmentDuration?: number; timezone?: string | null } | null,
 ): Promise<{ available: boolean; slots: string[]; blockedPeriods: string[] }> {
+  const timezone = settings?.timezone || "Europe/Amsterdam";
   const openTime = settings?.openTime || "09:00";
   const closeTime = settings?.closeTime || "17:00";
   const [openHour, openMin] = openTime.split(":").map(Number);
@@ -213,15 +214,14 @@ export async function getAvailableSlotsForDate(
   }
 
   const allAppointments = await storage.getAppointmentsByDoctorId(doctorId);
-  const checkDateStart = new Date(`${dateStr}T00:00:00`);
-  const checkDateEnd = new Date(`${dateStr}T23:59:59`);
   const bookedRanges: { start: number; end: number }[] = [];
 
   for (const apt of allAppointments) {
     if (apt.status === "cancelled") continue;
-    const aptDate = new Date(apt.date);
-    if (aptDate >= checkDateStart && aptDate <= checkDateEnd) {
-      const aptMinutes = aptDate.getHours() * 60 + aptDate.getMinutes();
+    const aptDateInTz = getDateInTimezone(new Date(apt.date), timezone);
+    if (aptDateInTz === dateStr) {
+      const aptTime = getTimeInTimezone(new Date(apt.date), timezone);
+      const aptMinutes = aptTime.hours * 60 + aptTime.minutes;
       bookedRanges.push({ start: aptMinutes, end: aptMinutes + apt.duration });
     }
   }

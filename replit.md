@@ -169,6 +169,17 @@ shared/               # Shared types and database schema
   - Admin UI: Settings page has "Appointment Reminders" card with toggle, channel, and timing options
 - **ffmpeg**: Required for WebM to WAV audio conversion (available on Replit)
 
+### Timezone Handling
+- **Utility module**: `server/utils/timezone.ts` - All timezone conversions use `date-fns-tz` (DST-safe)
+- **Clinic timezone**: Configurable in admin settings (stored in `clinicSettings.timezone`, default: `Europe/Amsterdam`)
+- **Key functions**: `getNowInTimezone()`, `clinicTimeToUTC()`, `isClinicTimePast()`, `getDateInTimezone()`, `getTimeInTimezone()`, `getTomorrowInTimezone()`, `getDayAfterTomorrowInTimezone()`
+- **Pattern**: All "now/today/tomorrow" calculations use clinic timezone, not server UTC
+- **Appointment dates**: Stored as UTC in DB; converted to clinic timezone for display/filtering using `getDateInTimezone()`/`getTimeInTimezone()`
+- **Past-date checks**: Always use `isClinicTimePast()` for consistency
+- **Day-of-week**: Derived from date strings (`new Date(dateStr + "T12:00:00").getDay()`) to avoid UTC midnight edge cases
+- **Timezone cached** for 60 seconds to reduce DB queries
+- **Admin UI**: Timezone selector in settings page with 25+ common timezones
+
 ### Key NPM Packages
 - `drizzle-orm` / `drizzle-kit`: Database ORM and migrations
 - `express-session`: Session management
@@ -178,4 +189,5 @@ shared/               # Shared types and database schema
 - `express-rate-limit`: API rate limiting
 - `@tanstack/react-query`: Data fetching and caching
 - `wouter`: Client-side routing
+- `date-fns-tz`: Timezone-aware date operations (DST-safe)
 - `zod`: Schema validation

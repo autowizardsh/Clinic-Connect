@@ -16,6 +16,7 @@ import {
 import { buildSystemPrompt } from "./prompts";
 import { findAvailableSlots, getAvailableSlotsForDate } from "./availability";
 import { determineQuickReplies } from "./quickReplies";
+import { getNowInTimezone, clinicTimeToUTC, isClinicTimePast, getTomorrowInTimezone, getDayAfterTomorrowInTimezone } from "../../utils/timezone";
 
 export function registerChatRoutes(app: Express) {
   app.post("/api/chat/session", async (req, res) => {
@@ -85,14 +86,12 @@ export function registerChatRoutes(app: Express) {
         "General Checkup",
         "Teeth Cleaning",
       ];
-      const now = new Date();
-      const formatLocalDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const today = formatLocalDate(now);
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const dayAfterTomorrow = new Date(now);
-      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-      const currentDayOfWeek = now.getDay();
+      const clinicTimezone = settings?.timezone || "Europe/Amsterdam";
+      const clinicNow = getNowInTimezone(clinicTimezone);
+      const today = clinicNow.dateStr;
+      const tomorrow = getTomorrowInTimezone(clinicTimezone);
+      const dayAfterTomorrow = getDayAfterTomorrowInTimezone(clinicTimezone);
+      const currentDayOfWeek = clinicNow.dayOfWeek;
 
       const systemPrompt = buildSystemPrompt({
         language,
@@ -103,8 +102,8 @@ export function registerChatRoutes(app: Express) {
         closeTime: settings?.closeTime || "17:00",
         workingDays: settings?.workingDays || [1, 2, 3, 4, 5, 6],
         today,
-        tomorrow: formatLocalDate(tomorrow),
-        dayAfterTomorrow: formatLocalDate(dayAfterTomorrow),
+        tomorrow,
+        dayAfterTomorrow,
         currentDayOfWeek,
       });
 
@@ -347,12 +346,10 @@ export function registerChatRoutes(app: Express) {
           } else if (appointment.status === "cancelled") {
             rescheduleResult = JSON.stringify({ success: false, error: "Cannot reschedule a cancelled appointment." });
           } else {
-            const newDateTime = new Date(`${rescheduleData.newDate}T${rescheduleData.newTime}:00`);
-            const now = new Date();
-            
-            if (newDateTime <= now) {
+            if (isClinicTimePast(rescheduleData.newDate, rescheduleData.newTime, clinicTimezone)) {
               rescheduleResult = JSON.stringify({ success: false, error: "Cannot reschedule to a past date/time." });
             } else {
+              const newDateTime = clinicTimeToUTC(rescheduleData.newDate, rescheduleData.newTime, clinicTimezone);
               const existingAppointments = await storage.getAppointmentsByDoctorId(appointment.doctorId);
               const duration = appointment.duration || 30;
               const conflicting = existingAppointments.find((apt) => {
@@ -390,7 +387,7 @@ export function registerChatRoutes(app: Express) {
                           service: appointment.service,
                           duration: duration,
                         },
-                        "Europe/Amsterdam"
+                        clinicTimezone,
                       );
                       await storage.updateAppointment(appointment.id, { googleEventId: event.id });
                     }
@@ -479,34 +476,15 @@ export function registerChatRoutes(app: Express) {
               throw new Error("MISSING_INFO: I need a valid phone number to book the appointment. What is your phone number?");
             }
 
-            const appointmentDateTime = new Date(
-              `${bookingData.date}T${bookingData.time}:00`,
-            );
+            const appointmentDateTime = clinicTimeToUTC(bookingData.date, bookingData.time, clinicTimezone);
             const appointmentDuration = settings?.appointmentDuration || 30;
 
-            const now = new Date();
-            const todayStart = new Date(
-              now.getFullYear(),
-              now.getMonth(),
-              now.getDate(),
-            );
-            const appointmentDate = new Date(
-              appointmentDateTime.getFullYear(),
-              appointmentDateTime.getMonth(),
-              appointmentDateTime.getDate(),
-            );
-
-            if (appointmentDate < todayStart) {
-              throw new Error(
-                `SLOT_UNAVAILABLE: Cannot book appointments in the past. Please choose a future date.`,
-              );
+            if (bookingData.date < today) {
+              throw new Error("SLOT_UNAVAILABLE: Cannot book appointments in the past. Please choose a future date.");
             }
-
-            if (appointmentDate.getTime() === todayStart.getTime()) {
-              if (appointmentDateTime.getTime() < now.getTime()) {
-                throw new Error(
-                  `SLOT_UNAVAILABLE: This time has already passed. Please choose a later time today or another day.`,
-                );
+            if (bookingData.date === today) {
+              if (isClinicTimePast(bookingData.date, bookingData.time, clinicTimezone)) {
+                throw new Error("SLOT_UNAVAILABLE: This time has already passed. Please choose a later time today or another day.");
               }
             }
 
@@ -589,6 +567,7 @@ export function registerChatRoutes(app: Express) {
                 appointmentDuration,
                 existingAppointments,
                 workingDays,
+                clinicTimezone,
               );
 
               if (alternativeSlots.length > 0) {
@@ -646,7 +625,7 @@ export function registerChatRoutes(app: Express) {
                     notes: bookingData.notes || undefined,
                     duration: appointmentDuration,
                   },
-                  "Europe/Amsterdam"
+                  clinicTimezone,
                 );
                 
                 await storage.updateAppointment(appointment.id, {
@@ -836,14 +815,12 @@ export function registerChatRoutes(app: Express) {
 
       const activeDoctors = doctors.filter((d) => d.isActive);
       const services = settings?.services || ["General Checkup", "Teeth Cleaning"];
-      const now = new Date();
-      const formatLocalDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const today = formatLocalDate(now);
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const dayAfterTomorrow = new Date(now);
-      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-      const currentDayOfWeek = now.getDay();
+      const clinicTimezone = settings?.timezone || "Europe/Amsterdam";
+      const clinicNow = getNowInTimezone(clinicTimezone);
+      const today = clinicNow.dateStr;
+      const tomorrow = getTomorrowInTimezone(clinicTimezone);
+      const dayAfterTomorrow = getDayAfterTomorrowInTimezone(clinicTimezone);
+      const currentDayOfWeek = clinicNow.dayOfWeek;
 
       const systemPrompt = buildSystemPrompt({
         language,
@@ -854,8 +831,8 @@ export function registerChatRoutes(app: Express) {
         closeTime: settings?.closeTime || "17:00",
         workingDays: settings?.workingDays || [1, 2, 3, 4, 5, 6],
         today,
-        tomorrow: formatLocalDate(tomorrow),
-        dayAfterTomorrow: formatLocalDate(dayAfterTomorrow),
+        tomorrow,
+        dayAfterTomorrow,
         currentDayOfWeek,
       });
 
@@ -950,7 +927,7 @@ export function registerChatRoutes(app: Express) {
               throw new Error("MISSING_INFO: I need a valid phone number to book the appointment. What is your phone number?");
             }
 
-            const appointmentDateTime = new Date(`${bookingData.date}T${bookingData.time}:00`);
+            const appointmentDateTime = clinicTimeToUTC(bookingData.date, bookingData.time, clinicTimezone);
             const appointmentDuration = settings?.appointmentDuration || 30;
 
             const existingAppointments = await storage.getAppointmentsByDoctorId(bookingData.doctorId);
@@ -1003,7 +980,7 @@ export function registerChatRoutes(app: Express) {
                       service: bookingData.service,
                       duration: appointmentDuration,
                     },
-                    "Europe/Amsterdam"
+                    clinicTimezone,
                   );
                   await storage.updateAppointment(appointment.id, { googleEventId: event.id });
                 }

@@ -247,7 +247,7 @@ export function registerAdminRoutes(app: Express) {
               notes: notes || undefined,
               duration: appointmentDuration,
             },
-            "Europe/Amsterdam"
+            settings?.timezone || "Europe/Amsterdam"
           );
           
           await storage.updateAppointment(appointment.id, {

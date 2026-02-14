@@ -14,6 +14,7 @@ import {
 import { buildSystemPrompt } from "./prompts";
 import { findAvailableSlots, getAvailableSlotsForDate, findEmergencySlot } from "./availability";
 import { determineQuickReplies } from "./quickReplies";
+import { getNowInTimezone, clinicTimeToUTC, isClinicTimePast, getTomorrowInTimezone, getDayAfterTomorrowInTimezone } from "../../utils/timezone";
 
 export interface ChatEngineResult {
   response: string;
@@ -50,15 +51,12 @@ export async function processChatMessage(
 
   const activeDoctors = doctors.filter((d) => d.isActive);
   const services = settings?.services || ["General Checkup", "Teeth Cleaning"];
-  const now = new Date();
-  const formatLocalDate = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const today = formatLocalDate(now);
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const dayAfterTomorrow = new Date(now);
-  dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-  const currentDayOfWeek = now.getDay();
+  const clinicTimezone = settings?.timezone || "Europe/Amsterdam";
+  const clinicNow = getNowInTimezone(clinicTimezone);
+  const today = clinicNow.dateStr;
+  const tomorrow = getTomorrowInTimezone(clinicTimezone);
+  const dayAfterTomorrow = getDayAfterTomorrowInTimezone(clinicTimezone);
+  const currentDayOfWeek = clinicNow.dayOfWeek;
 
   const systemPrompt = buildSystemPrompt({
     language,
@@ -75,8 +73,8 @@ export async function processChatMessage(
     closeTime: settings?.closeTime || "17:00",
     workingDays: settings?.workingDays || [1, 2, 3, 4, 5, 6],
     today,
-    tomorrow: formatLocalDate(tomorrow),
-    dayAfterTomorrow: formatLocalDate(dayAfterTomorrow),
+    tomorrow,
+    dayAfterTomorrow,
     currentDayOfWeek,
   });
 
@@ -413,12 +411,9 @@ export async function processChatMessage(
           error: "Cannot reschedule a cancelled appointment.",
         });
       } else {
-        const newDateTime = new Date(
-          `${rescheduleData.newDate}T${rescheduleData.newTime}:00`,
-        );
-        const nowCheck = new Date();
+        const newDateTime = clinicTimeToUTC(rescheduleData.newDate, rescheduleData.newTime, clinicTimezone);
 
-        if (newDateTime <= nowCheck) {
+        if (isClinicTimePast(rescheduleData.newDate, rescheduleData.newTime, clinicTimezone)) {
           rescheduleResult = JSON.stringify({
             success: false,
             error: "Cannot reschedule to a past date/time.",
@@ -471,7 +466,7 @@ export async function processChatMessage(
                       service: appointment.service,
                       duration: duration,
                     },
-                    "Europe/Amsterdam",
+                    clinicTimezone,
                   );
                   await storage.updateAppointment(appointment.id, {
                     googleEventId: event.id,
@@ -602,30 +597,17 @@ export async function processChatMessage(
         );
       }
 
-      const appointmentDateTime = new Date(
-        `${bookingData.date}T${bookingData.time}:00`,
-      );
+      const appointmentDateTime = clinicTimeToUTC(bookingData.date, bookingData.time, clinicTimezone);
       const appointmentDuration = settings?.appointmentDuration || 30;
 
-      const todayStart = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-      );
-      const appointmentDate = new Date(
-        appointmentDateTime.getFullYear(),
-        appointmentDateTime.getMonth(),
-        appointmentDateTime.getDate(),
-      );
-
-      if (appointmentDate < todayStart) {
+      if (bookingData.date < today) {
         throw new Error(
           "SLOT_UNAVAILABLE: Cannot book appointments in the past. Please choose a future date.",
         );
       }
 
-      if (appointmentDate.getTime() === todayStart.getTime()) {
-        if (appointmentDateTime.getTime() < now.getTime()) {
+      if (bookingData.date === today) {
+        if (isClinicTimePast(bookingData.date, bookingData.time, clinicTimezone)) {
           throw new Error(
             "SLOT_UNAVAILABLE: This time has already passed. Please choose a later time today or another day.",
           );
@@ -720,6 +702,7 @@ export async function processChatMessage(
           appointmentDuration,
           existingAppointments,
           workingDays,
+          clinicTimezone,
         );
 
         if (alternativeSlots.length > 0) {
@@ -772,7 +755,7 @@ export async function processChatMessage(
               notes: bookingData.notes || undefined,
               duration: appointmentDuration,
             },
-            "Europe/Amsterdam",
+            clinicTimezone,
           );
           await storage.updateAppointment(appointment.id, {
             googleEventId: event.id,

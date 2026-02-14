@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Building2, Clock, Calendar, MessageSquare, Plus, X, Bell } from "lucide-react";
+import { Settings, Building2, Clock, Calendar, MessageSquare, Plus, X, Bell, Globe } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useState } from "react";
@@ -29,6 +29,31 @@ export default function AdminSettings() {
   const { toast } = useToast();
   const [newService, setNewService] = useState("");
 
+  const COMMON_TIMEZONES = [
+    { value: "Europe/Amsterdam", label: "Europe/Amsterdam (CET/CEST)" },
+    { value: "Europe/London", label: "Europe/London (GMT/BST)" },
+    { value: "Europe/Berlin", label: "Europe/Berlin (CET/CEST)" },
+    { value: "Europe/Paris", label: "Europe/Paris (CET/CEST)" },
+    { value: "Europe/Brussels", label: "Europe/Brussels (CET/CEST)" },
+    { value: "Europe/Madrid", label: "Europe/Madrid (CET/CEST)" },
+    { value: "Europe/Rome", label: "Europe/Rome (CET/CEST)" },
+    { value: "Europe/Zurich", label: "Europe/Zurich (CET/CEST)" },
+    { value: "Europe/Vienna", label: "Europe/Vienna (CET/CEST)" },
+    { value: "Europe/Istanbul", label: "Europe/Istanbul (TRT)" },
+    { value: "Europe/Moscow", label: "Europe/Moscow (MSK)" },
+    { value: "Asia/Dubai", label: "Asia/Dubai (GST)" },
+    { value: "Asia/Kolkata", label: "Asia/Kolkata (IST)" },
+    { value: "Asia/Singapore", label: "Asia/Singapore (SGT)" },
+    { value: "Asia/Tokyo", label: "Asia/Tokyo (JST)" },
+    { value: "Australia/Sydney", label: "Australia/Sydney (AEST/AEDT)" },
+    { value: "America/New_York", label: "America/New York (EST/EDT)" },
+    { value: "America/Chicago", label: "America/Chicago (CST/CDT)" },
+    { value: "America/Denver", label: "America/Denver (MST/MDT)" },
+    { value: "America/Los_Angeles", label: "America/Los Angeles (PST/PDT)" },
+    { value: "America/Toronto", label: "America/Toronto (EST/EDT)" },
+    { value: "America/Sao_Paulo", label: "America/Sao Paulo (BRT)" },
+  ];
+
   const { data: settings, isLoading } = useQuery<ClinicSettings>({
     queryKey: ["/api/admin/settings"],
   });
@@ -42,6 +67,7 @@ export default function AdminSettings() {
       appointmentDuration: settings?.appointmentDuration || 30,
       openTime: settings?.openTime || "09:00",
       closeTime: settings?.closeTime || "17:00",
+      timezone: settings?.timezone || "Europe/Amsterdam",
       welcomeMessage: settings?.welcomeMessage || "",
       workingDays: settings?.workingDays || [1, 2, 3, 4, 5],
       services: settings?.services || [],
@@ -57,6 +83,7 @@ export default function AdminSettings() {
       appointmentDuration: settings.appointmentDuration,
       openTime: settings.openTime,
       closeTime: settings.closeTime,
+      timezone: settings.timezone || "Europe/Amsterdam",
       welcomeMessage: settings.welcomeMessage || "",
       workingDays: settings.workingDays || [1, 2, 3, 4, 5],
       services: settings.services || [],
@@ -233,6 +260,34 @@ export default function AdminSettings() {
                     )}
                   />
                 </div>
+                <FormField
+                  control={form.control}
+                  name="timezone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <Globe className="h-4 w-4" />
+                        Clinic Timezone
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-timezone">
+                            <SelectValue placeholder="Select timezone" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {COMMON_TIMEZONES.map((tz) => (
+                            <SelectItem key={tz.value} value={tz.value} data-testid={`timezone-${tz.value}`}>
+                              {tz.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>All appointments and schedules use this timezone</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <FormField
                   control={form.control}
                   name="appointmentDuration"
