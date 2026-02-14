@@ -24,6 +24,18 @@ function getLanguageInstruction(language: string): string {
   return `\nLANGUAGE: You MUST respond in ${name}. All your replies to the patient must be in ${name}, but understand questions in any language.`;
 }
 
+function formatWorkingDays(workingDays: number[]): string {
+  if (!workingDays.length) return "Not available";
+  const sorted = [...workingDays].sort((a, b) => a - b);
+  const names = sorted.map((d) => dayNames[d]);
+  if (names.length <= 2) return names.join(" & ");
+  const first = names[0];
+  const last = names[names.length - 1];
+  const isConsecutive = sorted.every((d, i) => i === 0 || d === sorted[i - 1] + 1);
+  if (isConsecutive) return `${first}-${last}`;
+  return names.join(", ");
+}
+
 export function buildSystemPrompt(params: {
   language: string;
   clinicName: string;
@@ -31,6 +43,7 @@ export function buildSystemPrompt(params: {
   activeDoctors: { id: number; name: string; specialty: string }[];
   openTime: string;
   closeTime: string;
+  workingDays: number[];
   today: string;
   tomorrow: string;
   dayAfterTomorrow: string;
@@ -43,6 +56,7 @@ export function buildSystemPrompt(params: {
     activeDoctors,
     openTime,
     closeTime,
+    workingDays,
     today,
     tomorrow,
     dayAfterTomorrow,
@@ -61,7 +75,7 @@ DATE CONTEXT:
 CLINIC INFO:
 Services: ${services.join(", ")}
 Dentists: ${activeDoctors.map((d) => `Dr. ${d.name} (ID: ${d.id}, ${d.specialty})`).join("; ") || "Contact us"}
-Hours: ${openTime} - ${closeTime}, Mon-Sat
+Hours: ${openTime} - ${closeTime}, ${formatWorkingDays(workingDays)}
 
 IMPORTANT - AVAILABILITY CHECKING:
 - ALWAYS call check_availability before telling a patient when a doctor is available
@@ -107,6 +121,7 @@ export function buildSimpleSystemPrompt(params: {
   activeDoctors: { id: number; name: string }[];
   openTime: string;
   closeTime: string;
+  workingDays: number[];
   today: string;
   tomorrow: string;
   currentDayOfWeek: number;
@@ -118,6 +133,7 @@ export function buildSimpleSystemPrompt(params: {
     activeDoctors,
     openTime,
     closeTime,
+    workingDays,
     today,
     tomorrow,
     currentDayOfWeek,
@@ -133,7 +149,7 @@ DATE CONTEXT:
 CLINIC INFO:
 Services: ${services.join(", ")}
 Dentists: ${activeDoctors.map((d) => `Dr. ${d.name} (ID: ${d.id})`).join("; ") || "Contact us"}
-Hours: ${openTime} - ${closeTime}
+Hours: ${openTime} - ${closeTime}, ${formatWorkingDays(workingDays)}
 
 IMPORTANT - AVAILABILITY:
 - ALWAYS call check_availability before mentioning when a doctor is available

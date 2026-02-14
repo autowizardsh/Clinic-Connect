@@ -72,6 +72,7 @@ export async function processChatMessage(
     })),
     openTime: settings?.openTime || "09:00",
     closeTime: settings?.closeTime || "17:00",
+    workingDays: settings?.workingDays || [1, 2, 3, 4, 5, 6],
     today,
     tomorrow: formatLocalDate(tomorrow),
     dayAfterTomorrow: formatLocalDate(dayAfterTomorrow),
