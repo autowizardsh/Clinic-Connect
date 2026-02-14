@@ -7,14 +7,29 @@ import { registerChatRoutes } from "./chat";
 import { registerPublicRoutes } from "./public";
 import { registerWhatsAppRoutes } from "./whatsapp";
 import { registerVoiceAgentRoutes } from "./voice-agent";
+import {
+  authLimiter,
+  chatLimiter,
+  voiceApiLimiter,
+  whatsappLimiter,
+  auditLog,
+} from "../middleware/security";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express,
 ): Promise<Server> {
   await setupAuth(app);
-  registerAuthRoutes(app);
 
+  app.use("/api/auth/login", authLimiter);
+  app.use("/api/chat", chatLimiter);
+  app.use("/api/voice", voiceApiLimiter);
+  app.use("/api/whatsapp", whatsappLimiter);
+
+  app.use("/api/admin", auditLog("admin_access"));
+  app.use("/api/doctor", auditLog("doctor_access"));
+
+  registerAuthRoutes(app);
   registerAdminRoutes(app);
   registerDoctorRoutes(app);
   registerChatRoutes(app);

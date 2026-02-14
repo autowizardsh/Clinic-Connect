@@ -62,6 +62,18 @@ Preferred communication style: Simple, everyday language.
 - Audio processing utilities for voice features (speech-to-text, text-to-speech)
 - Streaming responses via Server-Sent Events (SSE)
 
+### Security Layer
+- **Security middleware**: `server/middleware/security.ts`
+- **Helmet.js**: Security headers (X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, Referrer-Policy, etc.)
+- **Rate Limiting** (express-rate-limit):
+  - General API: 100 req/min per IP
+  - Login (`/api/auth/login`): 5 req/min per IP (brute-force protection)
+  - Chat (`/api/chat`): 20 req/min per IP (AI token abuse prevention)
+  - Voice API (`/api/voice`): 30 req/min per IP
+  - WhatsApp webhook (`/api/whatsapp`): 60 req/min per IP
+- **Session hardening**: httpOnly, secure (production), sameSite=lax cookies
+- **Audit logging**: `[AUDIT]` JSON entries for admin and doctor portal access (userId, role, IP, path, timestamp)
+
 ### Authentication Flow
 1. Session-based auth with PostgreSQL-backed session store
 2. Login via `/api/auth/login` with username/password
@@ -79,6 +91,7 @@ client/               # React frontend
 server/               # Express backend
   middleware/         # Express middleware
     auth.ts           # requireAuth, requireAdmin, requireDoctor
+    security.ts       # Helmet, rate limiters, audit logging
   services/           # Shared services
     openai.ts         # OpenAI client instance
   routes/             # Modular route handlers
@@ -145,6 +158,8 @@ shared/               # Shared types and database schema
 - `express-session`: Session management
 - `bcryptjs`: Password hashing
 - `openai`: OpenAI API client
+- `helmet`: HTTP security headers
+- `express-rate-limit`: API rate limiting
 - `@tanstack/react-query`: Data fetching and caching
 - `wouter`: Client-side routing
 - `zod`: Schema validation
