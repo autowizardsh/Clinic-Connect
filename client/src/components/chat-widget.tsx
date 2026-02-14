@@ -260,14 +260,14 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
             setSessionId("");
           }}>
             <SelectTrigger
-              className="h-8 w-[110px] border-white/30 bg-white/10 text-white text-xs"
+              className="h-8 w-[90px] border-white/30 bg-white/10 text-white text-xs"
               data-testid="select-language"
             >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="en" data-testid="select-language-en">English</SelectItem>
-              <SelectItem value="nl" data-testid="select-language-nl">Nederlands</SelectItem>
+              <SelectItem value="en" data-testid="select-language-en">EN</SelectItem>
+              <SelectItem value="nl" data-testid="select-language-nl">Dutch</SelectItem>
             </SelectContent>
           </Select>
           {!embedded && (
