@@ -2,7 +2,14 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageSquare, X, Send, Loader2, Globe } from "lucide-react";
+import { MessageSquare, X, Send, Loader2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface QuickReply {
   label: string;
@@ -210,10 +217,6 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
     }
   };
 
-  const toggleLanguage = () => {
-    const newLang = language === "en" ? "nl" : "en";
-    setLanguage(newLang);
-  };
 
   if (!embedded && !isOpen) {
     return (
@@ -251,15 +254,22 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleLanguage}
-            className="text-white hover:bg-white/20"
-            data-testid="button-toggle-language"
-          >
-            <Globe className="h-5 w-5" />
-          </Button>
+          <Select value={language} onValueChange={(val: "en" | "nl") => {
+            setLanguage(val);
+            setMessages([]);
+            setSessionId("");
+          }}>
+            <SelectTrigger
+              className="h-8 w-[110px] border-white/30 bg-white/10 text-white text-xs"
+              data-testid="select-language"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="en" data-testid="select-language-en">English</SelectItem>
+              <SelectItem value="nl" data-testid="select-language-nl">Nederlands</SelectItem>
+            </SelectContent>
+          </Select>
           {!embedded && (
             <Button
               variant="ghost"
@@ -274,10 +284,6 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
         </div>
       </div>
 
-      {/* Language indicator */}
-      <div className="px-4 py-2 bg-muted text-center text-sm text-muted-foreground">
-        {language === "nl" ? "Nederlands" : "English"} {" | "} {language === "nl" ? "Klik op de wereldbol om te wisselen" : "Click globe to switch"}
-      </div>
 
       {/* Messages */}
       <ScrollArea className="flex-1 p-4 chat-messages" ref={scrollRef}>
