@@ -191,6 +191,7 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
       ]);
     } finally {
       setIsLoading(false);
+      setTimeout(() => inputRef.current?.focus(), 0);
     }
   };
 
