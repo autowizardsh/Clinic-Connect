@@ -112,6 +112,9 @@ export const clinicSettings = pgTable("clinic_settings", {
   timezone: text("timezone").default("Europe/Amsterdam"),
   welcomeMessage: text("welcome_message").default("Welcome to our dental clinic! How can I help you today?"),
   services: jsonb("services").$type<string[]>().default(["General Checkup", "Teeth Cleaning", "Fillings", "Root Canal", "Teeth Whitening", "Orthodontics"]),
+  reminderEnabled: boolean("reminder_enabled").default(false).notNull(),
+  reminderChannels: jsonb("reminder_channels").$type<string[]>().default(["email"]),
+  reminderOffsets: jsonb("reminder_offsets").$type<number[]>().default([1440, 60]),
 });
 
 export const insertClinicSettingsSchema = createInsertSchema(clinicSettings).omit({
@@ -119,6 +122,27 @@ export const insertClinicSettingsSchema = createInsertSchema(clinicSettings).omi
 });
 export type ClinicSettings = typeof clinicSettings.$inferSelect;
 export type InsertClinicSettings = z.infer<typeof insertClinicSettingsSchema>;
+
+// ============================================
+// APPOINTMENT REMINDERS
+// ============================================
+export const appointmentReminders = pgTable("appointment_reminders", {
+  id: serial("id").primaryKey(),
+  appointmentId: integer("appointment_id").notNull().references(() => appointments.id),
+  offsetMinutes: integer("offset_minutes").notNull(),
+  channel: text("channel").notNull(),
+  status: text("status").notNull().default("pending"),
+  sentAt: timestamp("sent_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertAppointmentReminderSchema = createInsertSchema(appointmentReminders).omit({
+  id: true,
+  createdAt: true,
+});
+export type AppointmentReminder = typeof appointmentReminders.$inferSelect;
+export type InsertAppointmentReminder = z.infer<typeof insertAppointmentReminderSchema>;
 
 // ============================================
 // CHAT SESSIONS (for widget)
