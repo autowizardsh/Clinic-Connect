@@ -37,7 +37,7 @@ export function DoctorLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider style={sidebarStyle as React.CSSProperties}>
-      <div className="flex h-screen w-full">
+      <div className="flex h-screen w-full overflow-hidden">
         <Sidebar>
           <SidebarHeader className="p-4">
             <Link href="/doctor">

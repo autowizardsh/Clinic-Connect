@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
 /* LIGHT MODE - Professional Medical/Dental Theme */
 :root {
   --button-outline: rgba(0,0,0, .10);
