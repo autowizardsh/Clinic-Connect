@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { getAvailableSlotsForDate, findAvailableSlots } from "./chat/availability";
 import { createCalendarEvent, deleteCalendarEvent } from "../google-calendar";
 import { sendAppointmentConfirmationEmail, sendAppointmentCancelledEmail, sendAppointmentRescheduledEmail } from "../services/email";
+import { scheduleRemindersForAppointment, rescheduleRemindersForAppointment, cancelRemindersForAppointment } from "../services/reminders";
 
 function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -244,6 +245,10 @@ export function registerVoiceAgentRoutes(app: Express) {
         }).catch((e) => console.error("Voice API - Failed to send confirmation email:", e));
       }
 
+      scheduleRemindersForAppointment(appointment.id).catch((e) =>
+        console.error("Voice API - Failed to schedule reminders:", e)
+      );
+
       res.json({
         success: true,
         referenceNumber: appointment.referenceNumber,
@@ -356,6 +361,10 @@ export function registerVoiceAgentRoutes(app: Express) {
           referenceNumber: refNum,
         }).catch((e) => console.error("Voice API - Failed to send cancellation email:", e));
       }
+
+      cancelRemindersForAppointment(appointment.id).catch((e) =>
+        console.error("Voice API - Failed to cancel reminders:", e)
+      );
 
       res.json({
         success: true,
@@ -496,6 +505,10 @@ export function registerVoiceAgentRoutes(app: Express) {
           referenceNumber: refNum,
         }).catch((e) => console.error("Voice API - Failed to send reschedule email:", e));
       }
+
+      rescheduleRemindersForAppointment(appointment.id).catch((e) =>
+        console.error("Voice API - Failed to reschedule reminders:", e)
+      );
 
       res.json({
         success: true,

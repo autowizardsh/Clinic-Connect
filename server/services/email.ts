@@ -452,6 +452,52 @@ async function sendStaffNotifications(
   }
 }
 
+function reminderEmailBody(data: {
+  patientName: string;
+  doctorName: string;
+  date: Date;
+  service: string;
+  referenceNumber: string;
+  offsetMinutes: number;
+}): string {
+  let timeLabel: string;
+  if (data.offsetMinutes >= 1440) {
+    const days = Math.round(data.offsetMinutes / 1440);
+    timeLabel = days === 1 ? "tomorrow" : `in ${days} days`;
+  } else if (data.offsetMinutes >= 60) {
+    const hours = Math.round(data.offsetMinutes / 60);
+    timeLabel = hours === 1 ? "in 1 hour" : `in ${hours} hours`;
+  } else {
+    timeLabel = `in ${data.offsetMinutes} minutes`;
+  }
+
+  return `
+<h2 style="margin:0 0 8px;font-size:18px;color:#111827;">Appointment Reminder</h2>
+<p style="margin:0 0 24px;font-size:14px;color:#6b7280;">Hi ${data.patientName}, this is a friendly reminder that your appointment is ${timeLabel}.</p>
+
+${appointmentDetailsTable(data, "#eff6ff", "#bfdbfe")}
+
+<p style="margin:0;font-size:13px;color:#6b7280;">
+If you need to reschedule or cancel, please use your reference number <strong>${data.referenceNumber}</strong> in our chat or contact the clinic.
+</p>`;
+}
+
+export async function sendAppointmentReminderEmail(data: {
+  patientEmail: string;
+  patientName: string;
+  doctorName: string;
+  date: Date;
+  service: string;
+  referenceNumber: string;
+  offsetMinutes: number;
+}): Promise<boolean> {
+  const clinicName = await getClinicName();
+  const subject = `Reminder: Appointment ${formatDate(data.date)} at ${formatTime(data.date)}`;
+  const body = reminderEmailBody(data);
+  const html = baseTemplate(clinicName, "Appointment Reminder", body);
+  return sendEmail(data.patientEmail, subject, html);
+}
+
 export async function sendAppointmentConfirmationEmail(data: {
   patientEmail: string;
   patientName: string;

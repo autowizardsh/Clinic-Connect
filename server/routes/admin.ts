@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { createCalendarEvent } from "../google-calendar";
 import { sendAppointmentConfirmationEmail, sendAppointmentCancelledEmail } from "../services/email";
+import { scheduleRemindersForAppointment, cancelRemindersForAppointment } from "../services/reminders";
 
 export function registerAdminRoutes(app: Express) {
   app.get("/api/admin/stats", requireAdmin, async (req, res) => {
@@ -276,6 +277,10 @@ export function registerAdminRoutes(app: Express) {
         console.error("Failed to send confirmation email:", emailError);
       }
 
+      scheduleRemindersForAppointment(appointment.id).catch((e) =>
+        console.error("Failed to schedule reminders:", e)
+      );
+
       res.json(appointment);
     } catch (error) {
       console.error("Error creating appointment:", error);
@@ -289,6 +294,11 @@ export function registerAdminRoutes(app: Express) {
       const appointment = await storage.updateAppointment(id, req.body);
       if (!appointment) {
         return res.status(404).json({ error: "Appointment not found" });
+      }
+      if (req.body.status === "cancelled") {
+        cancelRemindersForAppointment(id).catch((e) =>
+          console.error("Failed to cancel reminders:", e)
+        );
       }
       res.json(appointment);
     } catch (error) {

@@ -7,7 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Settings, Building2, Clock, Calendar, MessageSquare, Plus, X } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Settings, Building2, Clock, Calendar, MessageSquare, Plus, X, Bell } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useState } from "react";
@@ -43,6 +45,9 @@ export default function AdminSettings() {
       welcomeMessage: settings?.welcomeMessage || "",
       workingDays: settings?.workingDays || [1, 2, 3, 4, 5],
       services: settings?.services || [],
+      reminderEnabled: settings?.reminderEnabled || false,
+      reminderChannels: settings?.reminderChannels || ["email"],
+      reminderOffsets: settings?.reminderOffsets || [1440, 60],
     },
     values: settings ? {
       clinicName: settings.clinicName,
@@ -55,6 +60,9 @@ export default function AdminSettings() {
       welcomeMessage: settings.welcomeMessage || "",
       workingDays: settings.workingDays || [1, 2, 3, 4, 5],
       services: settings.services || [],
+      reminderEnabled: settings.reminderEnabled ?? false,
+      reminderChannels: settings.reminderChannels || ["email"],
+      reminderOffsets: settings.reminderOffsets || [1440, 60],
     } : undefined,
   });
 
@@ -330,6 +338,125 @@ export default function AdminSettings() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Appointment Reminders */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="h-5 w-5" />
+                Appointment Reminders
+              </CardTitle>
+              <CardDescription>Automatically remind patients before their appointments</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <FormField
+                control={form.control}
+                name="reminderEnabled"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between gap-4">
+                    <div>
+                      <FormLabel>Enable Reminders</FormLabel>
+                      <FormDescription>Send automatic appointment reminders to patients</FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        data-testid="switch-reminder-enabled"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {form.watch("reminderEnabled") && (
+                <>
+                  <FormField
+                    control={form.control}
+                    name="reminderChannels"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Reminder Channels</FormLabel>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="channel-email"
+                              checked={field.value?.includes("email")}
+                              onCheckedChange={(checked) => {
+                                const current = field.value || [];
+                                if (checked) {
+                                  field.onChange([...current, "email"]);
+                                } else {
+                                  field.onChange(current.filter((c: string) => c !== "email"));
+                                }
+                              }}
+                              data-testid="checkbox-channel-email"
+                            />
+                            <label htmlFor="channel-email" className="text-sm">Email</label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="channel-whatsapp"
+                              checked={field.value?.includes("whatsapp")}
+                              onCheckedChange={(checked) => {
+                                const current = field.value || [];
+                                if (checked) {
+                                  field.onChange([...current, "whatsapp"]);
+                                } else {
+                                  field.onChange(current.filter((c: string) => c !== "whatsapp"));
+                                }
+                              }}
+                              data-testid="checkbox-channel-whatsapp"
+                            />
+                            <label htmlFor="channel-whatsapp" className="text-sm">WhatsApp</label>
+                          </div>
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="reminderOffsets"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Reminder Timing</FormLabel>
+                        <FormDescription>Select when to send reminders before each appointment</FormDescription>
+                        <div className="flex flex-col gap-2">
+                          {[
+                            { value: 2880, label: "2 days before" },
+                            { value: 1440, label: "1 day before" },
+                            { value: 120, label: "2 hours before" },
+                            { value: 60, label: "1 hour before" },
+                            { value: 30, label: "30 minutes before" },
+                          ].map((option) => (
+                            <div key={option.value} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`offset-${option.value}`}
+                                checked={field.value?.includes(option.value)}
+                                onCheckedChange={(checked) => {
+                                  const current = field.value || [];
+                                  if (checked) {
+                                    field.onChange([...current, option.value].sort((a, b) => b - a));
+                                  } else {
+                                    field.onChange(current.filter((v: number) => v !== option.value));
+                                  }
+                                }}
+                                data-testid={`checkbox-offset-${option.value}`}
+                              />
+                              <label htmlFor={`offset-${option.value}`} className="text-sm">{option.label}</label>
+                            </div>
+                          ))}
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Services */}
           <Card>

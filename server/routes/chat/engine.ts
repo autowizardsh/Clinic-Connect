@@ -2,6 +2,7 @@ import { storage } from "../../storage";
 import { openai } from "../../services/openai";
 import { createCalendarEvent, deleteCalendarEvent } from "../../google-calendar";
 import { sendAppointmentConfirmationEmail, sendAppointmentCancelledEmail, sendAppointmentRescheduledEmail } from "../../services/email";
+import { scheduleRemindersForAppointment, rescheduleRemindersForAppointment, cancelRemindersForAppointment } from "../../services/reminders";
 import {
   checkAvailabilityFunction,
   bookingFunction,
@@ -305,6 +306,10 @@ export async function processChatMessage(
           }).catch((e) => console.error("Failed to send cancellation email:", e));
         }
 
+        cancelRemindersForAppointment(appointment.id).catch((e) =>
+          console.error("Failed to cancel reminders:", e)
+        );
+
         cancelResult = JSON.stringify({
           success: true,
           message: `Appointment ${refNum} has been cancelled successfully.`,
@@ -456,6 +461,10 @@ export async function processChatMessage(
                 referenceNumber: refNum,
               }).catch((e) => console.error("Failed to send reschedule email:", e));
             }
+
+            rescheduleRemindersForAppointment(appointment.id).catch((e) =>
+              console.error("Failed to reschedule reminders:", e)
+            );
 
             rescheduleResult = JSON.stringify({
               success: true,
@@ -759,6 +768,10 @@ export async function processChatMessage(
           referenceNumber: appointment.referenceNumber!,
         }).catch((e) => console.error("Failed to send confirmation email:", e));
       }
+
+      scheduleRemindersForAppointment(appointment.id).catch((e) =>
+        console.error("Failed to schedule reminders:", e)
+      );
 
       const confirmationResponse = await openai.chat.completions.create({
         model: "gpt-4o",

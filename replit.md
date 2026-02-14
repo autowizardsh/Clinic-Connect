@@ -12,6 +12,7 @@ Key capabilities:
 - Doctor portal for viewing schedules and managing availability
 - Session-based authentication with role-based access control (admin/doctor)
 - OpenAI integration for conversational AI features
+- Automated appointment reminders via email and WhatsApp
 
 ### Appointment Reference Numbers
 - Every appointment gets a unique reference number (APT-XXXX) on creation
@@ -114,6 +115,10 @@ server/               # Express backend
       service.ts      # Graph API message sending (text/buttons/lists)
   replit_integrations/ # AI, auth setup modules
   google-calendar.ts  # Google Calendar API helpers
+  services/
+    email.ts          # SES email sending with ICS calendar invites
+    openai.ts         # OpenAI client instance
+    reminders.ts      # Appointment reminder scheduler & processing
 shared/               # Shared types and database schema
   models/             # Drizzle table definitions
   schema.ts           # Main schema exports
@@ -151,6 +156,16 @@ shared/               # Shared types and database schema
   - Endpoints: GET `/doctors`, GET `/services`, POST `/availability`, POST `/book`, POST `/lookup`, POST `/cancel`, POST `/reschedule`
   - Replicates booking/cancel/reschedule logic from chat engine with full validation
   - Includes Google Calendar sync and email notifications
+- **Appointment Reminders**: Automated patient reminder system
+  - Service module: `server/services/reminders.ts`
+  - Database table: `appointment_reminders` (tracks per-appointment, per-channel, per-offset reminders)
+  - Clinic settings fields: `reminderEnabled`, `reminderChannels`, `reminderOffsets`
+  - Scheduler: Runs every 5 minutes, processes pending reminders whose send time has arrived
+  - Channels: Email (via SES) and WhatsApp (via Graph API)
+  - Offsets: Configurable (e.g., 1440 = 24h before, 60 = 1h before)
+  - Reminders auto-created on appointment booking, re-created on reschedule, deleted on cancel
+  - Hooks integrated into: chat engine, voice agent, admin routes
+  - Admin UI: Settings page has "Appointment Reminders" card with toggle, channel, and timing options
 - **ffmpeg**: Required for WebM to WAV audio conversion (available on Replit)
 
 ### Key NPM Packages

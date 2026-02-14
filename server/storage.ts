@@ -9,6 +9,7 @@ import {
   chatSessions,
   chatMessages,
   adminUsers,
+  appointmentReminders,
   type Doctor,
   type Patient,
   type Appointment,
@@ -17,6 +18,7 @@ import {
   type ChatSession,
   type ChatMessage,
   type AdminUser,
+  type AppointmentReminder,
   type InsertDoctor,
   type InsertPatient,
   type InsertAppointment,
@@ -25,6 +27,7 @@ import {
   type InsertChatSession,
   type InsertChatMessage,
   type InsertAdminUser,
+  type InsertAppointmentReminder,
   users,
   type User,
   type UpsertUser,
@@ -87,6 +90,14 @@ export interface IStorage {
   getAdminUserByUsername(username: string): Promise<AdminUser | undefined>;
   getAdminUsers(): Promise<AdminUser[]>;
   createAdminUser(adminUser: InsertAdminUser): Promise<AdminUser>;
+
+  // Appointment Reminders
+  createAppointmentReminder(reminder: InsertAppointmentReminder): Promise<AppointmentReminder>;
+  getPendingReminders(): Promise<(AppointmentReminder & { appointment: Appointment; doctor: Doctor; patient: Patient })[]>;
+  markReminderSent(id: number): Promise<void>;
+  markReminderFailed(id: number, errorMessage: string): Promise<void>;
+  getRemindersForAppointment(appointmentId: number): Promise<AppointmentReminder[]>;
+  deleteRemindersForAppointment(appointmentId: number): Promise<void>;
 
   // Stats
   getAdminStats(): Promise<{
@@ -490,6 +501,58 @@ export class DatabaseStorage implements IStorage {
         patient: row.patients!,
       })),
     };
+  }
+
+  // Appointment Reminders
+  async createAppointmentReminder(reminder: InsertAppointmentReminder): Promise<AppointmentReminder> {
+    const [result] = await db.insert(appointmentReminders).values(reminder).returning();
+    return result;
+  }
+
+  async getPendingReminders(): Promise<(AppointmentReminder & { appointment: Appointment; doctor: Doctor; patient: Patient })[]> {
+    const now = new Date();
+    const result = await db
+      .select()
+      .from(appointmentReminders)
+      .innerJoin(appointments, eq(appointmentReminders.appointmentId, appointments.id))
+      .innerJoin(doctors, eq(appointments.doctorId, doctors.id))
+      .innerJoin(patients, eq(appointments.patientId, patients.id))
+      .where(
+        and(
+          eq(appointmentReminders.status, "pending"),
+          eq(appointments.status, "scheduled"),
+          gte(appointments.date, now)
+        )
+      );
+
+    return result
+      .filter((row) => {
+        const apptTime = new Date(row.appointments.date).getTime();
+        const sendTime = apptTime - row.appointment_reminders.offsetMinutes * 60 * 1000;
+        return sendTime <= now.getTime();
+      })
+      .map((row) => ({
+        ...row.appointment_reminders,
+        appointment: row.appointments,
+        doctor: row.doctors,
+        patient: row.patients,
+      }));
+  }
+
+  async markReminderSent(id: number): Promise<void> {
+    await db.update(appointmentReminders).set({ status: "sent", sentAt: new Date() }).where(eq(appointmentReminders.id, id));
+  }
+
+  async markReminderFailed(id: number, errorMessage: string): Promise<void> {
+    await db.update(appointmentReminders).set({ status: "failed", errorMessage }).where(eq(appointmentReminders.id, id));
+  }
+
+  async getRemindersForAppointment(appointmentId: number): Promise<AppointmentReminder[]> {
+    return db.select().from(appointmentReminders).where(eq(appointmentReminders.appointmentId, appointmentId));
+  }
+
+  async deleteRemindersForAppointment(appointmentId: number): Promise<void> {
+    await db.delete(appointmentReminders).where(eq(appointmentReminders.appointmentId, appointmentId));
   }
 }
 
