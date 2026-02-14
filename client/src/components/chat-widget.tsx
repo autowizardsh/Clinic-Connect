@@ -260,12 +260,12 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
             setSessionId("");
           }}>
             <SelectTrigger
-              className="h-8 w-[90px] border-white/30 bg-white/10 text-white text-xs"
+              className="h-7 w-[62px] border-white/30 bg-white/10 text-white text-xs px-2"
               data-testid="select-language"
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent align="end" className="min-w-[62px]">
               <SelectItem value="en" data-testid="select-language-en">EN</SelectItem>
               <SelectItem value="nl" data-testid="select-language-nl">NL</SelectItem>
             </SelectContent>
