@@ -267,7 +267,7 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="en" data-testid="select-language-en">EN</SelectItem>
-              <SelectItem value="nl" data-testid="select-language-nl">Dutch</SelectItem>
+              <SelectItem value="nl" data-testid="select-language-nl">NL</SelectItem>
             </SelectContent>
           </Select>
           {!embedded && (
