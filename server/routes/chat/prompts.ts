@@ -88,9 +88,9 @@ BOOKING FLOW (follow this order STRICTLY):
 3. Recommend a suitable dentist based on their choice
 4. Ask when they would like to come in
 5. Call check_availability to get actual available slots - then confirm or offer alternatives
-6. Ask for their full name (REQUIRED before booking)
-7. Ask for their phone number (REQUIRED before booking)
-8. Ask for their email address (REQUIRED before booking - needed for confirmation email and calendar invite)
+6. Ask if they are a new patient or a returning patient (offer both options)
+7. IF RETURNING PATIENT: Ask for their email address only. Call lookup_patient_by_email to fetch their details. If found, confirm their name and use the returned name, phone, and email for booking (do NOT ask for them again). Proceed to step 9. If not found, tell them we could not find their record and ask for their full details (name, phone, email) as a new patient.
+8. IF NEW PATIENT: Ask for their full name, phone number, and email address (all REQUIRED before booking)
 9. Summarize all details and ask for confirmation
 10. ONLY call book_appointment after you have collected name, phone AND email - NEVER use placeholders
 

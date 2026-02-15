@@ -168,6 +168,24 @@ export const findEmergencySlotFunction = {
   },
 };
 
+export const lookupPatientByEmailFunction = {
+  type: "function" as const,
+  function: {
+    name: "lookup_patient_by_email",
+    description: "Look up a returning patient by their email address. Use this when the patient says they are a returning patient and provides their email. Returns the patient's name, phone, and email if found.",
+    parameters: {
+      type: "object",
+      properties: {
+        email: {
+          type: "string",
+          description: "The patient's email address to look up",
+        },
+      },
+      required: ["email"],
+    },
+  },
+};
+
 export const checkAvailabilityFunctionSimple = {
   type: "function" as const,
   function: {

@@ -22,6 +22,14 @@ Key capabilities:
 - Phone verification required alongside reference number to prevent unauthorized access
 - Reference numbers displayed in admin and doctor appointment cards
 
+### New vs Returning Patient Flow
+- During booking, after selecting a time slot, the AI asks if the patient is new or returning
+- **Returning patient**: Only asks for email, calls `lookup_patient_by_email` tool to fetch stored details (name, phone, email)
+- **New patient**: Asks for full details (name, phone, email) as before
+- Quick reply buttons shown: "New patient" / "Returning patient" (EN) or "Nieuwe patient" / "Terugkerende patient" (NL)
+- If returning patient email not found, falls back to new patient flow
+- Storage method: `getPatientByEmail(email)` in `server/storage.ts`
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.

@@ -20,6 +20,26 @@ export async function determineQuickReplies(
   const allUserText = userMessages.join(" ") + " " + lowerMessage;
   const recentUserText = userMessages.slice(-3).join(" ") + " " + lowerMessage;
 
+  const isAskingNewOrReturning = (
+    (lowerResponse.includes("new patient") && lowerResponse.includes("returning patient")) ||
+    (lowerResponse.includes("nieuwe pati") && lowerResponse.includes("terugkerende pati")) ||
+    (lowerResponse.includes("new patient") && lowerResponse.includes("existing patient")) ||
+    (lowerResponse.includes("first time") && lowerResponse.includes("been here before")) ||
+    (lowerResponse.includes("new") && lowerResponse.includes("returning") && lowerResponse.includes("patient"))
+  );
+
+  if (isAskingNewOrReturning) {
+    return language === "nl"
+      ? [
+          { label: "Nieuwe patient", value: "Ik ben een nieuwe patient" },
+          { label: "Terugkerende patient", value: "Ik ben een terugkerende patient" },
+        ]
+      : [
+          { label: "New patient", value: "I am a new patient" },
+          { label: "Returning patient", value: "I am a returning patient" },
+        ];
+  }
+
   const isAskingContactInfo = (
     lowerResponse.includes("your name") || lowerResponse.includes("full name") ||
     lowerResponse.includes("phone number") || lowerResponse.includes("uw naam") ||
