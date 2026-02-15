@@ -543,8 +543,10 @@ export async function processChatMessage(
     try {
       const lookupData = JSON.parse(patientLookupToolCall.function.arguments);
       const email = (lookupData.email || "").trim().toLowerCase();
+      console.log("Patient lookup by email:", email);
 
       const patient = await storage.getPatientByEmail(email);
+      console.log("Patient lookup result:", patient ? `Found: ${patient.name} (${patient.email})` : "Not found");
 
       let lookupResult = "";
       if (patient) {

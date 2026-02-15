@@ -186,7 +186,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPatientByEmail(email: string): Promise<Patient | undefined> {
-    const [patient] = await db.select().from(patients).where(eq(patients.email, email));
+    const [patient] = await db.select().from(patients).where(sql`LOWER(${patients.email}) = LOWER(${email})`);
     return patient;
   }
 

@@ -10,6 +10,7 @@ import {
   lookupAppointmentFunction,
   cancelAppointmentFunction,
   rescheduleAppointmentFunction,
+  lookupPatientByEmailFunction,
   checkAvailabilityFunctionSimple,
   bookingFunctionSimple,
 } from "./tools";
@@ -125,7 +126,7 @@ export function registerChatRoutes(app: Express) {
       let initialResponse = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: currentMessages,
-        tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction],
+        tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
         tool_choice: "auto",
       });
 
@@ -171,13 +172,67 @@ export function registerChatRoutes(app: Express) {
           const followUpResponse = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: currentMessages,
-            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction],
+            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
             tool_choice: "auto",
           });
           
           responseMessage = followUpResponse.choices[0]?.message;
         } catch (e) {
           console.error("Error checking availability:", e);
+        }
+      }
+
+      if (
+        responseMessage?.tool_calls &&
+        responseMessage.tool_calls.length > 0 &&
+        responseMessage.tool_calls[0]?.function?.name === "lookup_patient_by_email"
+      ) {
+        const patientLookupToolCall = responseMessage.tool_calls[0] as {
+          id: string;
+          function: { name: string; arguments: string };
+        };
+
+        try {
+          const lookupData = JSON.parse(patientLookupToolCall.function.arguments);
+          const email = (lookupData.email || "").trim().toLowerCase();
+          console.log("Patient lookup by email:", email);
+
+          const patient = await storage.getPatientByEmail(email);
+          console.log("Patient lookup result:", patient ? `Found: ${patient.name} (${patient.email})` : "Not found");
+
+          let lookupResult = "";
+          if (patient) {
+            lookupResult = JSON.stringify({
+              found: true,
+              patientId: patient.id,
+              name: patient.name,
+              phone: patient.phone,
+              email: patient.email,
+            });
+          } else {
+            lookupResult = JSON.stringify({
+              found: false,
+              message: "No patient found with this email address. Please collect their details as a new patient (name, phone number, and email).",
+            });
+          }
+
+          currentMessages.push(responseMessage);
+          currentMessages.push({
+            role: "tool",
+            tool_call_id: patientLookupToolCall.id,
+            content: lookupResult,
+          });
+
+          const patientLookupFollowUp = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: currentMessages,
+            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
+            tool_choice: "auto",
+          });
+
+          responseMessage = patientLookupFollowUp.choices[0]?.message;
+        } catch (e) {
+          console.error("Error looking up patient by email:", e);
         }
       }
 
@@ -232,7 +287,7 @@ export function registerChatRoutes(app: Express) {
           const lookupFollowUp = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: currentMessages,
-            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction],
+            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
             tool_choice: "auto",
           });
           
