@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes/index";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import { helmetMiddleware, generalApiLimiter } from "./middleware/security";
+import { helmetMiddleware, generalApiLimiter, widgetCorsHeaders } from "./middleware/security";
 
 const app = express();
 const httpServer = createServer(app);
@@ -14,6 +14,9 @@ declare module "http" {
 }
 
 app.use(helmetMiddleware);
+
+app.use("/chat", widgetCorsHeaders);
+app.use("/widget.js", widgetCorsHeaders);
 
 app.use(
   express.json({

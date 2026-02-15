@@ -13,6 +13,7 @@ import {
   voiceApiLimiter,
   whatsappLimiter,
   auditLog,
+  widgetCorsHeaders,
 } from "../middleware/security";
 
 export async function registerRoutes(
@@ -22,7 +23,8 @@ export async function registerRoutes(
   await setupAuth(app);
 
   app.use("/api/auth/login", authLimiter);
-  app.use("/api/chat", chatLimiter);
+  app.use("/api/chat", widgetCorsHeaders, chatLimiter);
+  app.use("/api/public", widgetCorsHeaders);
   app.use("/api/voice", voiceApiLimiter);
   app.use("/api/whatsapp", whatsappLimiter);
 

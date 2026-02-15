@@ -5,7 +5,23 @@ import rateLimit from "express-rate-limit";
 export const helmetMiddleware = helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginOpenerPolicy: false,
+  frameguard: { action: "sameorigin" },
 });
+
+export function widgetCorsHeaders(req: Request, res: Response, next: NextFunction) {
+  res.removeHeader("X-Frame-Options");
+  res.removeHeader("Cross-Origin-Opener-Policy");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+}
 
 export const generalApiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
