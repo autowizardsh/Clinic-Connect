@@ -17,6 +17,7 @@ app.use(helmetMiddleware);
 
 app.use("/chat", widgetCorsHeaders);
 app.use("/widget.js", widgetCorsHeaders);
+app.use("/widget-demo.html", widgetCorsHeaders);
 
 app.use(
   express.json({

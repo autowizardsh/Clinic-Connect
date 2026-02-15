@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DentalAI Chat Widget - Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #334155;
+      padding: 40px 24px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 28px; margin-bottom: 8px; color: #0f172a; }
+    .subtitle { color: #64748b; margin-bottom: 32px; font-size: 16px; }
+    .card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .card h2 { font-size: 18px; margin-bottom: 12px; color: #0f172a; }
+    .card p { line-height: 1.6; margin-bottom: 12px; }
+    pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 16px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    code { font-family: "Fira Code", "Consolas", monospace; }
+    .highlight { color: #38bdf8; }
+    .arrow { display: inline-block; animation: bounce 1.5s infinite; font-size: 20px; margin-left: 8px; }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+  </style>
+</head>
+<body>
+  <h1>DentalAI Chat Widget Demo</h1>
+  <p class="subtitle">This page demonstrates the embeddable chat widget. Look for the chat icon at the bottom-right corner. <span class="arrow">&#8600;</span></p>
+
+  <div class="card">
+    <h2>How to Embed on Your Website</h2>
+    <p>Add this single line of code just before the closing <code>&lt;/body&gt;</code> tag on your website:</p>
+    <pre><code>&lt;script src="<span class="highlight" id="widget-url"></span>"&gt;&lt;/script&gt;</code></pre>
+    <p>That's it! The chat icon will automatically appear at the bottom-right corner of your page.</p>
+  </div>
+
+  <div class="card">
+    <h2>Testing Tips</h2>
+    <p>1. <strong>Do NOT use online HTML editors</strong> (like CodePen, JSFiddle, etc.) to test this. They sandbox scripts and block external resources.</p>
+    <p>2. <strong>Best way to test:</strong> Create a simple <code>.html</code> file on your computer, paste the code above, and open it directly in your browser.</p>
+    <p>3. <strong>Or use this page:</strong> The widget is already loaded here. Click the blue chat icon at the bottom-right!</p>
+  </div>
+
+  <script>
+    document.getElementById('widget-url').textContent = window.location.origin + '/widget.js';
+  </script>
+  <script src="widget.js"></script>
+</body>
+</html>
