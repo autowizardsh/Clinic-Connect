@@ -20,12 +20,21 @@ export async function determineQuickReplies(
   const allUserText = userMessages.join(" ") + " " + lowerMessage;
   const recentUserText = userMessages.slice(-3).join(" ") + " " + lowerMessage;
 
+  const containsAny = (text: string, phrases: string[]): boolean =>
+    phrases.some(p => text.includes(p));
+
   const isAskingNewOrReturning = (
-    (lowerResponse.includes("new patient") && lowerResponse.includes("returning patient")) ||
-    (lowerResponse.includes("nieuwe pati") && lowerResponse.includes("terugkerende pati")) ||
-    (lowerResponse.includes("new patient") && lowerResponse.includes("existing patient")) ||
-    (lowerResponse.includes("first time") && lowerResponse.includes("been here before")) ||
-    (lowerResponse.includes("new") && lowerResponse.includes("returning") && lowerResponse.includes("patient"))
+    (containsAny(lowerResponse, ["new patient", "nieuwe pati"]) &&
+     containsAny(lowerResponse, ["returning patient", "existing patient", "terugkerende pati", "bestaande pati"])) ||
+    (containsAny(lowerResponse, ["first time", "eerste keer"]) &&
+     containsAny(lowerResponse, ["been here before", "visited us before", "been before", "eerder geweest", "al eerder"])) ||
+    (containsAny(lowerResponse, ["new", "nieuw"]) &&
+     containsAny(lowerResponse, ["returning", "terugkerend"]) &&
+     containsAny(lowerResponse, ["patient", "patiënt"])) ||
+    (containsAny(lowerResponse, ["first visit", "eerste bezoek"]) &&
+     lowerResponse.includes("?")) ||
+    (containsAny(lowerResponse, ["visited us", "been with us", "registered", "have an account", "on file", "in our system", "bij ons geregistreerd", "in ons systeem"]) &&
+     lowerResponse.includes("?"))
   );
 
   if (isAskingNewOrReturning) {
@@ -40,20 +49,27 @@ export async function determineQuickReplies(
         ];
   }
 
-  const isAskingContactInfo = (
-    lowerResponse.includes("your name") || lowerResponse.includes("full name") ||
-    lowerResponse.includes("phone number") || lowerResponse.includes("uw naam") ||
-    lowerResponse.includes("telefoonnummer") || lowerResponse.includes("your number") ||
-    lowerResponse.includes("reference number") || lowerResponse.includes("referentienummer") ||
-    lowerResponse.includes("booking reference") || lowerResponse.includes("apt-") ||
-    lowerResponse.includes("email address") || lowerResponse.includes("e-mailadres")
-  );
+  const isAskingContactInfo = containsAny(lowerResponse, [
+    "your name", "full name", "your full name", "first and last name",
+    "phone number", "your number", "contact number", "mobile number", "telephone",
+    "reference number", "referentienummer", "booking reference", "apt-",
+    "email address", "e-mail address", "your email", "e-mailadres",
+    "uw naam", "uw volledige naam", "telefoonnummer", "uw e-mail",
+  ]);
   if (isAskingContactInfo) {
     return [];
   }
 
-  const isCancelComplete = lowerResponse.includes("has been cancelled") || lowerResponse.includes("is geannuleerd") || lowerResponse.includes("successfully cancelled");
-  const isRescheduleComplete = lowerResponse.includes("has been rescheduled") || lowerResponse.includes("is verzet") || lowerResponse.includes("successfully rescheduled");
+  const isCancelComplete = containsAny(lowerResponse, [
+    "has been cancelled", "successfully cancelled", "appointment cancelled",
+    "is cancelled", "been canceled", "successfully canceled",
+    "is geannuleerd", "succesvol geannuleerd", "afspraak geannuleerd",
+  ]);
+  const isRescheduleComplete = containsAny(lowerResponse, [
+    "has been rescheduled", "successfully rescheduled", "appointment rescheduled",
+    "is rescheduled", "been rescheduled",
+    "is verzet", "succesvol verzet", "afspraak verzet", "is verplaatst",
+  ]);
 
   if (isCancelComplete || isRescheduleComplete) {
     return language === "nl"
@@ -67,7 +83,15 @@ export async function determineQuickReplies(
         ];
   }
 
-  const isBookingComplete = lowerResponse.includes("has been booked") || lowerResponse.includes("successfully booked") || lowerResponse.includes("appointment is confirmed") || lowerResponse.includes("is geboekt") || lowerResponse.includes("is bevestigd") || lowerResponse.includes("successfully scheduled");
+  const isBookingComplete = containsAny(lowerResponse, [
+    "has been booked", "successfully booked", "appointment is confirmed",
+    "is booked", "appointment confirmed", "booking confirmed", "booking is confirmed",
+    "successfully scheduled", "has been scheduled", "appointment scheduled",
+    "is geboekt", "is bevestigd", "succesvol geboekt", "afspraak bevestigd",
+    "reference number", "referentienummer",
+  ]) && containsAny(lowerResponse, [
+    "booked", "confirmed", "scheduled", "geboekt", "bevestigd", "reference", "apt-",
+  ]);
 
   if (isBookingComplete) {
     return language === "nl"
@@ -81,12 +105,14 @@ export async function determineQuickReplies(
         ];
   }
 
-  const isAskingCancelConfirm = (
-    lowerResponse.includes("cancel this appointment") || lowerResponse.includes("want to cancel") ||
-    lowerResponse.includes("confirm the cancellation") || lowerResponse.includes("sure you want to cancel") ||
-    lowerResponse.includes("would you like to cancel") || lowerResponse.includes("like me to cancel") ||
-    lowerResponse.includes("wilt u annuleren") || lowerResponse.includes("afspraak annuleren")
-  );
+  const isAskingCancelConfirm = containsAny(lowerResponse, [
+    "cancel this appointment", "want to cancel", "confirm the cancellation",
+    "sure you want to cancel", "would you like to cancel", "like me to cancel",
+    "shall i cancel", "should i cancel", "proceed with cancellation",
+    "go ahead and cancel", "want me to cancel", "confirm cancel",
+    "wilt u annuleren", "afspraak annuleren", "zal ik annuleren",
+    "wilt u dat ik annuleer", "doorgaan met annuleren",
+  ]);
 
   if (isAskingCancelConfirm) {
     return language === "nl"
@@ -100,12 +126,15 @@ export async function determineQuickReplies(
         ];
   }
 
-  const isAskingRescheduleConfirm = (
-    lowerResponse.includes("reschedule to") || lowerResponse.includes("shall i reschedule") ||
-    lowerResponse.includes("confirm the reschedule") || lowerResponse.includes("would you like me to reschedule") ||
-    lowerResponse.includes("like to reschedule") ||
-    lowerResponse.includes("verzetten naar") || lowerResponse.includes("zal ik verzetten")
-  );
+  const isAskingRescheduleConfirm = containsAny(lowerResponse, [
+    "reschedule to", "shall i reschedule", "confirm the reschedule",
+    "would you like me to reschedule", "like to reschedule",
+    "should i reschedule", "want me to reschedule", "go ahead and reschedule",
+    "proceed with reschedul", "confirm reschedul", "move your appointment",
+    "move it to", "change it to",
+    "verzetten naar", "zal ik verzetten", "wilt u verzetten",
+    "zal ik verplaatsen", "wilt u verplaatsen", "doorgaan met verzetten",
+  ]);
 
   if (isAskingRescheduleConfirm) {
     return language === "nl"
@@ -119,14 +148,18 @@ export async function determineQuickReplies(
         ];
   }
 
-  const isAskingConfirmation = (
-    lowerResponse.includes("shall i book") || lowerResponse.includes("shall i go ahead") ||
-    lowerResponse.includes("should i book") || lowerResponse.includes("should i go ahead") ||
-    lowerResponse.includes("would you like me to book") || lowerResponse.includes("would you like me to confirm") ||
-    lowerResponse.includes("want me to book") || lowerResponse.includes("ready to book") ||
-    lowerResponse.includes("zal ik boeken") || lowerResponse.includes("zal ik de afspraak") ||
-    lowerResponse.includes("wilt u dat ik boek") || lowerResponse.includes("confirm this")
-  );
+  const isAskingConfirmation = containsAny(lowerResponse, [
+    "shall i book", "shall i go ahead", "should i book", "should i go ahead",
+    "would you like me to book", "would you like me to confirm",
+    "want me to book", "ready to book", "shall i proceed", "should i proceed",
+    "would you like to confirm", "like me to go ahead", "like me to proceed",
+    "confirm this", "confirm the booking", "confirm the appointment",
+    "go ahead and book", "proceed with booking", "proceed with the booking",
+    "everything look correct", "everything correct", "look good",
+    "does that look right", "is that correct", "sound good", "sounds good",
+    "zal ik boeken", "zal ik de afspraak", "wilt u dat ik boek",
+    "wilt u bevestigen", "zal ik doorgaan", "klopt dit", "klopt alles",
+  ]);
 
   if (isAskingConfirmation) {
     return language === "nl"
@@ -140,7 +173,12 @@ export async function determineQuickReplies(
         ];
   }
 
-  const isGreeting = (lowerResponse.includes("how can i help") || lowerResponse.includes("hoe kan ik") || lowerResponse.includes("what can i") || lowerResponse.includes("welcome")) && conversationHistory.length <= 2;
+  const isGreeting = containsAny(lowerResponse, [
+    "how can i help", "how may i help", "what can i help", "what can i do for you",
+    "how can i assist", "how may i assist", "what would you like",
+    "hoe kan ik", "waarmee kan ik", "wat kan ik voor u",
+    "welcome", "welkom",
+  ]) && conversationHistory.length <= 2;
 
   if (isGreeting) {
     return language === "nl"
@@ -160,13 +198,15 @@ export async function determineQuickReplies(
         ];
   }
 
-  const inCancelFlow = recentUserText.includes("cancel") || recentUserText.includes("annuleren");
-  const inRescheduleFlow = recentUserText.includes("reschedule") || recentUserText.includes("verzetten") || recentUserText.includes("verplaats");
+  const inCancelFlow = containsAny(recentUserText, ["cancel", "annuleren"]);
+  const inRescheduleFlow = containsAny(recentUserText, ["reschedule", "verzetten", "verplaats"]);
   if (inCancelFlow || inRescheduleFlow) {
     return [];
   }
 
-  const hasBookingIntent = allUserText.includes("book") || allUserText.includes("appointment") || allUserText.includes("afspraak") || allUserText.includes("boek") || allUserText.includes("schedule");
+  const hasBookingIntent = containsAny(allUserText, [
+    "book", "appointment", "afspraak", "boek", "schedule", "reserve",
+  ]);
 
   if (!hasBookingIntent) {
     return [];
@@ -180,7 +220,7 @@ export async function determineQuickReplies(
   if (!userJustPickedTime && !hasSelectedTime) {
     const timeSlotMatch = aiResponse.match(/\b(\d{1,2}:\d{2})\b/g);
     if (timeSlotMatch && timeSlotMatch.length >= 2) {
-      const uniqueSlots = [...new Set(timeSlotMatch)];
+      const uniqueSlots = Array.from(new Set(timeSlotMatch));
       if (uniqueSlots.length >= 2) {
         return uniqueSlots.slice(0, 6).map(t => ({
           label: t,
@@ -190,13 +230,13 @@ export async function determineQuickReplies(
     }
   }
 
-  const isAskingService = (
-    lowerResponse.includes("service") || lowerResponse.includes("treatment") ||
-    lowerResponse.includes("dienst") || lowerResponse.includes("behandeling") ||
-    lowerResponse.includes("which type") || lowerResponse.includes("what type") ||
-    lowerResponse.includes("welke soort") || lowerResponse.includes("what kind") ||
-    lowerResponse.includes("looking for") || lowerResponse.includes("need help with")
-  ) && !hasSelectedService;
+  const isAskingService = containsAny(lowerResponse, [
+    "service", "treatment", "procedure", "type of",
+    "dienst", "behandeling", "welke soort",
+    "which type", "what type", "what kind",
+    "looking for", "need help with", "like to have done",
+    "what brings you", "what do you need", "reason for your visit",
+  ]) && !hasSelectedService;
 
   if (isAskingService) {
     return services.map(s => ({
@@ -206,11 +246,14 @@ export async function determineQuickReplies(
   }
 
   const isAskingDoctor = (
-    lowerResponse.includes("which dentist") || lowerResponse.includes("which doctor") ||
-    lowerResponse.includes("prefer") || lowerResponse.includes("preference") ||
-    lowerResponse.includes("welke tandarts") || lowerResponse.includes("voorkeur") ||
-    lowerResponse.includes("recommend") || lowerResponse.includes("would you like to see") ||
-    lowerResponse.includes("wilt u bij") || lowerResponse.includes("specialist") ||
+    containsAny(lowerResponse, [
+      "which dentist", "which doctor", "prefer", "preference",
+      "welke tandarts", "voorkeur", "recommend", "would you like to see",
+      "wilt u bij", "specialist", "particular doctor", "specific doctor",
+      "any preference", "doctor preference", "dentist preference",
+      "choose a doctor", "choose a dentist", "select a doctor", "select a dentist",
+      "available doctor", "available dentist",
+    ]) ||
     (lowerResponse.includes("dr.") && lowerResponse.includes("?"))
   ) && !hasSelectedDoctor;
 
@@ -221,15 +264,15 @@ export async function determineQuickReplies(
     }));
   }
 
-  const isAskingDate = (
-    lowerResponse.includes("when would you") || lowerResponse.includes("which day") ||
-    lowerResponse.includes("what day") || lowerResponse.includes("which date") ||
-    lowerResponse.includes("what date") || lowerResponse.includes("preferred date") ||
-    lowerResponse.includes("wanneer wilt") || lowerResponse.includes("welke dag") ||
-    lowerResponse.includes("welke datum") || lowerResponse.includes("when do you") ||
-    lowerResponse.includes("come in") || lowerResponse.includes("like to visit") ||
-    lowerResponse.includes("when are you") || lowerResponse.includes("schedule for")
-  );
+  const isAskingDate = containsAny(lowerResponse, [
+    "when would you", "which day", "what day", "which date", "what date",
+    "preferred date", "when do you", "come in", "like to visit",
+    "when are you", "schedule for", "when works", "when suits",
+    "what time", "which time", "preferred time", "when is good",
+    "available on", "like to come", "want to come",
+    "wanneer wilt", "welke dag", "welke datum", "wanneer komt",
+    "wanneer past", "wanneer schikt",
+  ]);
 
   if (isAskingDate) {
     const now = new Date();
