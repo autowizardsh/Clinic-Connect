@@ -109,6 +109,7 @@
     iframe.id = 'dentalai-widget-iframe';
     iframe.title = 'DentalAI Chat';
     iframe.setAttribute('allow', 'microphone');
+    iframe.src = WIDGET_URL;
 
     iframeWrap.appendChild(iframe);
 
@@ -120,15 +121,10 @@
     document.body.appendChild(container);
 
     var isOpen = false;
-    var iframeLoaded = false;
 
     function openWidget() {
       if (isOpen) return;
       isOpen = true;
-      if (!iframeLoaded) {
-        iframe.src = WIDGET_URL;
-        iframeLoaded = true;
-      }
       button.style.display = 'none';
       backdrop.style.display = 'block';
       iframeWrap.style.display = 'block';
