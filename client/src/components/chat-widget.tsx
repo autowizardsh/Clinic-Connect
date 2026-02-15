@@ -272,11 +272,17 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatW
               <SelectItem value="nl" data-testid="select-language-nl">NL</SelectItem>
             </SelectContent>
           </Select>
-          {!embedded && (
+          {(!embedded || window !== window.top) && (
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setIsOpen(false)}
+              onClick={() => {
+                if (window !== window.top) {
+                  window.parent.postMessage({ type: 'dentalai-close' }, '*');
+                } else {
+                  setIsOpen(false);
+                }
+              }}
               className="text-white hover:bg-white/20"
               data-testid="button-close-chat"
             >
