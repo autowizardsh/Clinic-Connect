@@ -2,9 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar, Users, UserCheck, Clock } from "lucide-react";
+import { useClinicTimezone } from "@/hooks/use-clinic-timezone";
 import type { Appointment, Doctor, Patient } from "@shared/schema";
 
 export default function AdminDashboard() {
+  const tz = useClinicTimezone();
   const { data: stats, isLoading } = useQuery<{
     totalAppointments: number;
     todayAppointments: number;
@@ -123,10 +125,10 @@ export default function AdminDashboard() {
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-medium">
-                      {new Date(apt.date).toLocaleDateString()}
+                      {tz.formatDate(apt.date)}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {new Date(apt.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {tz.formatTime(apt.date)}
                     </div>
                   </div>
                 </div>

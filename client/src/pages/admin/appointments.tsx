@@ -13,14 +13,16 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Calendar, Clock, MessageSquare, Phone, Pencil, X, Check } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useClinicTimezone } from "@/hooks/use-clinic-timezone";
 import type { Appointment, Doctor, Patient, InsertAppointment } from "@shared/schema";
 
 type AppointmentWithRelations = Appointment & { doctor: Doctor; patient: Patient };
 
 export default function AdminAppointments() {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const { toast } = useToast();
+  const tz = useClinicTimezone();
+  const [selectedDate, setSelectedDate] = useState<string>(tz.getTodayString());
 
   const { data: appointments, isLoading } = useQuery<AppointmentWithRelations[]>({
     queryKey: ["/api/admin/appointments"],
@@ -101,15 +103,15 @@ export default function AdminAppointments() {
   });
 
   const todayAppointments = appointments?.filter(
-    (apt) => new Date(apt.date).toDateString() === new Date().toDateString()
+    (apt) => tz.isToday(apt.date)
   );
 
   const upcomingAppointments = appointments?.filter(
-    (apt) => new Date(apt.date) > new Date() && apt.status === "scheduled"
+    (apt) => tz.isFuture(apt.date) && apt.status === "scheduled"
   );
 
   const filteredByDate = appointments?.filter(
-    (apt) => new Date(apt.date).toISOString().split("T")[0] === selectedDate
+    (apt) => tz.getDateString(apt.date) === selectedDate
   );
 
   const getStatusBadge = (status: string) => {
@@ -331,6 +333,7 @@ export default function AdminAppointments() {
                   getSourceIcon={getSourceIcon}
                   onCancel={() => cancelMutation.mutate(apt.id)}
                   onComplete={() => updateStatusMutation.mutate({ id: apt.id, status: "completed" })}
+                  tz={tz}
                 />
               ))}
             </div>
@@ -350,6 +353,7 @@ export default function AdminAppointments() {
                   getSourceIcon={getSourceIcon}
                   onCancel={() => cancelMutation.mutate(apt.id)}
                   onComplete={() => updateStatusMutation.mutate({ id: apt.id, status: "completed" })}
+                  tz={tz}
                 />
               ))}
             </div>
@@ -376,6 +380,7 @@ export default function AdminAppointments() {
                   getSourceIcon={getSourceIcon}
                   onCancel={() => cancelMutation.mutate(apt.id)}
                   onComplete={() => updateStatusMutation.mutate({ id: apt.id, status: "completed" })}
+                  tz={tz}
                 />
               ))}
             </div>
@@ -395,6 +400,7 @@ export default function AdminAppointments() {
                   getSourceIcon={getSourceIcon}
                   onCancel={() => cancelMutation.mutate(apt.id)}
                   onComplete={() => updateStatusMutation.mutate({ id: apt.id, status: "completed" })}
+                  tz={tz}
                 />
               ))}
             </div>
@@ -413,12 +419,14 @@ function AppointmentCard({
   getSourceIcon,
   onCancel,
   onComplete,
+  tz,
 }: {
   appointment: AppointmentWithRelations;
   getStatusBadge: (status: string) => JSX.Element;
   getSourceIcon: (source: string) => JSX.Element;
   onCancel: () => void;
   onComplete: () => void;
+  tz: ReturnType<typeof import("@/hooks/use-clinic-timezone").useClinicTimezone>;
 }) {
   return (
     <Card data-testid={`card-appointment-${appointment.id}`}>
@@ -445,11 +453,11 @@ function AppointmentCard({
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
-              {new Date(appointment.date).toLocaleDateString()}
+              {tz.formatDate(appointment.date)}
             </div>
             <div className="flex items-center gap-1">
               <Clock className="h-4 w-4" />
-              {new Date(appointment.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              {tz.formatTime(appointment.date)}
             </div>
           </div>
           <p className="text-sm">

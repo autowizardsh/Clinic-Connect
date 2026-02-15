@@ -1,5 +1,6 @@
 import { SESClient, SendRawEmailCommand } from "@aws-sdk/client-ses";
 import { storage } from "../storage";
+import { toZonedTime } from "date-fns-tz";
 
 let sesClient: SESClient | null = null;
 
@@ -22,28 +23,35 @@ function getFromEmail(): string | null {
   return process.env.AWS_SES_FROM_EMAIL || null;
 }
 
-function formatDate(date: Date): string {
-  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+function toClinicTime(date: Date, timezone: string): Date {
+  return toZonedTime(date, timezone);
 }
 
-function formatTime(date: Date): string {
-  const hours = date.getHours();
-  const minutes = String(date.getMinutes()).padStart(2, "0");
+function formatDate(date: Date, timezone?: string): string {
+  const d = timezone ? toClinicTime(date, timezone) : date;
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+function formatTime(date: Date, timezone?: string): string {
+  const d = timezone ? toClinicTime(date, timezone) : date;
+  const hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, "0");
   const ampm = hours >= 12 ? "PM" : "AM";
   const displayHour = hours % 12 || 12;
   return `${displayHour}:${minutes} ${ampm}`;
 }
 
-function formatICSDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const h = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  const s = String(date.getSeconds()).padStart(2, "0");
-  return `${y}${m}${d}T${h}${min}${s}`;
+function formatICSDate(date: Date, timezone?: string): string {
+  const d = timezone ? toClinicTime(date, timezone) : date;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  const s = String(d.getSeconds()).padStart(2, "0");
+  return `${y}${m}${day}T${h}${min}${s}`;
 }
 
 function generateICSContent(data: {
@@ -58,9 +66,9 @@ function generateICSContent(data: {
   timezone: string;
   method: "REQUEST" | "CANCEL";
 }): string {
-  const startDate = formatICSDate(data.date);
+  const startDate = formatICSDate(data.date, data.timezone);
   const endDate = new Date(data.date.getTime() + data.duration * 60 * 1000);
-  const endDateStr = formatICSDate(endDate);
+  const endDateStr = formatICSDate(endDate, data.timezone);
   const now = formatICSDate(new Date());
   const uid = `${data.referenceNumber}@dentalclinic`;
   const status = data.method === "CANCEL" ? "CANCELLED" : "CONFIRMED";
@@ -137,13 +145,15 @@ function appointmentDetailsTable(data: {
   date: Date;
   service: string;
   duration?: number;
+  timezone?: string;
 }, bgColor: string, borderColor: string): string {
+  const tz = data.timezone;
   const rows = [
     { label: "Reference", value: data.referenceNumber, bold: true },
     { label: "Patient", value: data.patientName },
     { label: "Doctor", value: `Dr. ${data.doctorName}` },
-    { label: "Date", value: formatDate(data.date) },
-    { label: "Time", value: formatTime(data.date) },
+    { label: "Date", value: formatDate(data.date, tz) },
+    { label: "Time", value: formatTime(data.date, tz) },
     { label: "Service", value: data.service },
   ];
   if (data.duration) {
@@ -172,6 +182,7 @@ function scheduledEmailBody(data: {
   service: string;
   duration: number;
   referenceNumber: string;
+  timezone?: string;
 }): string {
   return `
 <h2 style="margin:0 0 8px;font-size:18px;color:#111827;">Appointment Confirmed</h2>
@@ -192,6 +203,7 @@ function scheduledStaffEmailBody(data: {
   duration: number;
   referenceNumber: string;
   recipientRole: string;
+  timezone?: string;
 }): string {
   return `
 <h2 style="margin:0 0 8px;font-size:18px;color:#111827;">New Appointment Booked</h2>
@@ -208,6 +220,7 @@ function rescheduledEmailBody(data: {
   service: string;
   duration: number;
   referenceNumber: string;
+  timezone?: string;
 }): string {
   return `
 <h2 style="margin:0 0 8px;font-size:18px;color:#111827;">Appointment Rescheduled</h2>
@@ -216,7 +229,7 @@ function rescheduledEmailBody(data: {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:16px;margin-bottom:16px;">
 <tr><td>
 <p style="margin:0;font-size:13px;color:#92400e;">
-<strong>Previous:</strong> ${formatDate(data.oldDate)} at ${formatTime(data.oldDate)}
+<strong>Previous:</strong> ${formatDate(data.oldDate, data.timezone)} at ${formatTime(data.oldDate, data.timezone)}
 </p>
 </td></tr>
 </table>
@@ -232,6 +245,7 @@ function rescheduledStaffEmailBody(data: {
   service: string;
   duration: number;
   referenceNumber: string;
+  timezone?: string;
 }): string {
   return `
 <h2 style="margin:0 0 8px;font-size:18px;color:#111827;">Appointment Rescheduled</h2>
@@ -240,7 +254,7 @@ function rescheduledStaffEmailBody(data: {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:16px;margin-bottom:16px;">
 <tr><td>
 <p style="margin:0;font-size:13px;color:#92400e;">
-<strong>Previous:</strong> ${formatDate(data.oldDate)} at ${formatTime(data.oldDate)}
+<strong>Previous:</strong> ${formatDate(data.oldDate, data.timezone)} at ${formatTime(data.oldDate, data.timezone)}
 </p>
 </td></tr>
 </table>
@@ -254,6 +268,7 @@ function cancelledEmailBody(data: {
   date: Date;
   service: string;
   referenceNumber: string;
+  timezone?: string;
 }): string {
   return `
 <h2 style="margin:0 0 8px;font-size:18px;color:#111827;">Appointment Cancelled</h2>
@@ -272,6 +287,7 @@ function cancelledStaffEmailBody(data: {
   date: Date;
   service: string;
   referenceNumber: string;
+  timezone?: string;
 }): string {
   return `
 <h2 style="margin:0 0 8px;font-size:18px;color:#111827;">Appointment Cancelled</h2>
@@ -459,6 +475,7 @@ function reminderEmailBody(data: {
   service: string;
   referenceNumber: string;
   offsetMinutes: number;
+  timezone?: string;
 }): string {
   let timeLabel: string;
   if (data.offsetMinutes >= 1440) {
@@ -491,10 +508,11 @@ export async function sendAppointmentReminderEmail(data: {
   referenceNumber: string;
   offsetMinutes: number;
 }): Promise<boolean> {
-  const clinicName = await getClinicName();
-  const subject = `Reminder: Appointment ${formatDate(data.date)} at ${formatTime(data.date)}`;
-  const body = reminderEmailBody(data);
-  const html = baseTemplate(clinicName, "Appointment Reminder", body);
+  const clinic = await getClinicInfo();
+  const tz = clinic.timezone;
+  const subject = `Reminder: Appointment ${formatDate(data.date, tz)} at ${formatTime(data.date, tz)}`;
+  const body = reminderEmailBody({ ...data, timezone: tz });
+  const html = baseTemplate(clinic.clinicName, "Appointment Reminder", body);
   return sendEmail(data.patientEmail, subject, html);
 }
 
@@ -508,13 +526,14 @@ export async function sendAppointmentConfirmationEmail(data: {
   referenceNumber: string;
 }): Promise<boolean> {
   const clinic = await getClinicInfo();
-  const subject = `Appointment Confirmed — ${formatDate(data.date)} at ${formatTime(data.date)}`;
+  const tz = clinic.timezone;
+  const subject = `Appointment Confirmed — ${formatDate(data.date, tz)} at ${formatTime(data.date, tz)}`;
 
   const icsContent = generateICSContent({
     ...data,
     clinicName: clinic.clinicName,
     clinicAddress: clinic.address,
-    timezone: clinic.timezone,
+    timezone: tz,
     method: "REQUEST",
   });
   const icsOptions = {
@@ -523,13 +542,13 @@ export async function sendAppointmentConfirmationEmail(data: {
     icsMethod: "REQUEST",
   };
 
-  const patientBody = scheduledEmailBody(data);
+  const patientBody = scheduledEmailBody({ ...data, timezone: tz });
   const patientHtml = baseTemplate(clinic.clinicName, "Appointment Confirmed", patientBody);
   const patientResult = sendEmail(data.patientEmail, subject, patientHtml, icsOptions);
 
-  const staffBody = scheduledStaffEmailBody({ ...data, recipientRole: "staff" });
+  const staffBody = scheduledStaffEmailBody({ ...data, recipientRole: "staff", timezone: tz });
   const staffHtml = baseTemplate(clinic.clinicName, "New Appointment Booked", staffBody);
-  sendStaffNotifications(data.doctorName, `New Booking: ${data.patientName} — ${formatDate(data.date)} at ${formatTime(data.date)}`, staffHtml, icsOptions);
+  sendStaffNotifications(data.doctorName, `New Booking: ${data.patientName} — ${formatDate(data.date, tz)} at ${formatTime(data.date, tz)}`, staffHtml, icsOptions);
 
   return patientResult;
 }
@@ -545,14 +564,15 @@ export async function sendAppointmentRescheduledEmail(data: {
   referenceNumber: string;
 }): Promise<boolean> {
   const clinic = await getClinicInfo();
-  const subject = `Appointment Rescheduled — New: ${formatDate(data.newDate)} at ${formatTime(data.newDate)}`;
+  const tz = clinic.timezone;
+  const subject = `Appointment Rescheduled — New: ${formatDate(data.newDate, tz)} at ${formatTime(data.newDate, tz)}`;
 
   const icsContent = generateICSContent({
     ...data,
     date: data.newDate,
     clinicName: clinic.clinicName,
     clinicAddress: clinic.address,
-    timezone: clinic.timezone,
+    timezone: tz,
     method: "REQUEST",
   });
   const icsOptions = {
@@ -561,13 +581,13 @@ export async function sendAppointmentRescheduledEmail(data: {
     icsMethod: "REQUEST",
   };
 
-  const patientBody = rescheduledEmailBody(data);
+  const patientBody = rescheduledEmailBody({ ...data, timezone: tz });
   const patientHtml = baseTemplate(clinic.clinicName, "Appointment Rescheduled", patientBody);
   const patientResult = sendEmail(data.patientEmail, subject, patientHtml, icsOptions);
 
-  const staffBody = rescheduledStaffEmailBody(data);
+  const staffBody = rescheduledStaffEmailBody({ ...data, timezone: tz });
   const staffHtml = baseTemplate(clinic.clinicName, "Appointment Rescheduled", staffBody);
-  sendStaffNotifications(data.doctorName, `Rescheduled: ${data.patientName} — New: ${formatDate(data.newDate)} at ${formatTime(data.newDate)}`, staffHtml, icsOptions);
+  sendStaffNotifications(data.doctorName, `Rescheduled: ${data.patientName} — New: ${formatDate(data.newDate, tz)} at ${formatTime(data.newDate, tz)}`, staffHtml, icsOptions);
 
   return patientResult;
 }
@@ -583,12 +603,13 @@ export async function sendAppointmentCancelledEmail(data: {
   const clinic = await getClinicInfo();
   const subject = `Appointment Cancelled — ${data.referenceNumber}`;
 
+  const tz = clinic.timezone;
   const icsContent = generateICSContent({
     ...data,
     duration: 15,
     clinicName: clinic.clinicName,
     clinicAddress: clinic.address,
-    timezone: clinic.timezone,
+    timezone: tz,
     method: "CANCEL",
   });
   const icsOptions = {
@@ -597,11 +618,11 @@ export async function sendAppointmentCancelledEmail(data: {
     icsMethod: "CANCEL",
   };
 
-  const patientBody = cancelledEmailBody(data);
+  const patientBody = cancelledEmailBody({ ...data, timezone: tz });
   const patientHtml = baseTemplate(clinic.clinicName, "Appointment Cancelled", patientBody);
   const patientResult = sendEmail(data.patientEmail, subject, patientHtml, icsOptions);
 
-  const staffBody = cancelledStaffEmailBody(data);
+  const staffBody = cancelledStaffEmailBody({ ...data, timezone: tz });
   const staffHtml = baseTemplate(clinic.clinicName, "Appointment Cancelled", staffBody);
   sendStaffNotifications(data.doctorName, `Cancelled: ${data.patientName} — ${data.referenceNumber}`, staffHtml, icsOptions);
 

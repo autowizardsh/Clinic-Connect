@@ -6,12 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Calendar, Clock, Users, Check, X, CalendarCheck } from "lucide-react";
+import { useClinicTimezone } from "@/hooks/use-clinic-timezone";
 import type { Appointment, Patient, Doctor } from "@shared/schema";
 
 type AppointmentWithPatient = Appointment & { patient: Patient };
 
 export default function DoctorDashboard() {
   const { toast } = useToast();
+  const tz = useClinicTimezone();
 
   const { data: profile, isLoading: profileLoading } = useQuery<Doctor>({
     queryKey: ["/api/doctor/profile"],
@@ -153,10 +155,10 @@ export default function DoctorDashboard() {
                   <div className="flex items-center gap-4">
                     <div className="text-right">
                       <div className="text-sm font-medium">
-                        {new Date(apt.date).toLocaleDateString()}
+                        {tz.formatDate(apt.date)}
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {new Date(apt.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {tz.formatTime(apt.date)}
                       </div>
                     </div>
                     {apt.status === "scheduled" && (

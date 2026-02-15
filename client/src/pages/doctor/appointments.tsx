@@ -9,13 +9,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Calendar, Clock, Check, X, Phone, MessageSquare, Pencil } from "lucide-react";
+import { useClinicTimezone } from "@/hooks/use-clinic-timezone";
 import type { Appointment, Patient } from "@shared/schema";
 
 type AppointmentWithPatient = Appointment & { patient: Patient };
 
 export default function DoctorAppointments() {
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const { toast } = useToast();
+  const tz = useClinicTimezone();
+  const [selectedDate, setSelectedDate] = useState<string>(tz.getTodayString());
 
   const { data: appointments, isLoading } = useQuery<AppointmentWithPatient[]>({
     queryKey: ["/api/doctor/appointments"],
@@ -32,19 +34,19 @@ export default function DoctorAppointments() {
   });
 
   const todayAppointments = appointments?.filter(
-    (apt) => new Date(apt.date).toDateString() === new Date().toDateString()
+    (apt) => tz.isToday(apt.date)
   );
 
   const upcomingAppointments = appointments?.filter(
-    (apt) => new Date(apt.date) > new Date() && apt.status === "scheduled"
+    (apt) => tz.isFuture(apt.date) && apt.status === "scheduled"
   );
 
   const pastAppointments = appointments?.filter(
-    (apt) => new Date(apt.date) < new Date() || apt.status !== "scheduled"
+    (apt) => !tz.isFuture(apt.date) || apt.status !== "scheduled"
   );
 
   const filteredByDate = appointments?.filter(
-    (apt) => new Date(apt.date).toISOString().split("T")[0] === selectedDate
+    (apt) => tz.getDateString(apt.date) === selectedDate
   );
 
   const getStatusBadge = (status: string) => {
@@ -118,6 +120,7 @@ export default function DoctorAppointments() {
                   getSourceIcon={getSourceIcon}
                   onComplete={() => updateStatusMutation.mutate({ id: apt.id, status: "completed" })}
                   onCancel={() => updateStatusMutation.mutate({ id: apt.id, status: "cancelled" })}
+                  tz={tz}
                 />
               ))}
             </div>
@@ -137,6 +140,7 @@ export default function DoctorAppointments() {
                   getSourceIcon={getSourceIcon}
                   onComplete={() => updateStatusMutation.mutate({ id: apt.id, status: "completed" })}
                   onCancel={() => updateStatusMutation.mutate({ id: apt.id, status: "cancelled" })}
+                  tz={tz}
                 />
               ))}
             </div>
@@ -163,6 +167,7 @@ export default function DoctorAppointments() {
                   getSourceIcon={getSourceIcon}
                   onComplete={() => updateStatusMutation.mutate({ id: apt.id, status: "completed" })}
                   onCancel={() => updateStatusMutation.mutate({ id: apt.id, status: "cancelled" })}
+                  tz={tz}
                 />
               ))}
             </div>
@@ -181,6 +186,7 @@ export default function DoctorAppointments() {
                   getStatusBadge={getStatusBadge}
                   getSourceIcon={getSourceIcon}
                   readonly
+                  tz={tz}
                 />
               ))}
             </div>
@@ -200,6 +206,7 @@ function AppointmentCard({
   onComplete,
   onCancel,
   readonly = false,
+  tz,
 }: {
   appointment: AppointmentWithPatient;
   getStatusBadge: (status: string) => JSX.Element;
@@ -207,6 +214,7 @@ function AppointmentCard({
   onComplete?: () => void;
   onCancel?: () => void;
   readonly?: boolean;
+  tz: ReturnType<typeof import("@/hooks/use-clinic-timezone").useClinicTimezone>;
 }) {
   return (
     <Card data-testid={`card-appointment-${appointment.id}`}>
@@ -236,11 +244,11 @@ function AppointmentCard({
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
-              {new Date(appointment.date).toLocaleDateString()}
+              {tz.formatDate(appointment.date)}
             </div>
             <div className="flex items-center gap-1">
               <Clock className="h-4 w-4" />
-              {new Date(appointment.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              {tz.formatTime(appointment.date)}
             </div>
           </div>
           {appointment.notes && (

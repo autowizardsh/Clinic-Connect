@@ -33,6 +33,7 @@ export function registerPublicRoutes(app: Express) {
         services: settings.services,
         openTime: settings.openTime,
         closeTime: settings.closeTime,
+        timezone: settings.timezone || "Europe/Amsterdam",
       });
     } catch (error) {
       console.error("Error fetching public settings:", error);

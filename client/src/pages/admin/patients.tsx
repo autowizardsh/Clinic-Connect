@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Users, Search, Trash2, Eye } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useClinicTimezone } from "@/hooks/use-clinic-timezone";
 import type { Patient, InsertPatient, Appointment } from "@shared/schema";
 
 export default function AdminPatients() {
@@ -18,6 +19,7 @@ export default function AdminPatients() {
   const [search, setSearch] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const { toast } = useToast();
+  const tz = useClinicTimezone();
 
   const { data: patients, isLoading } = useQuery<Patient[]>({
     queryKey: ["/api/admin/patients"],
@@ -286,7 +288,7 @@ export default function AdminPatients() {
                         <div className="flex justify-between">
                           <span className="font-medium">{apt.service}</span>
                           <span className="text-muted-foreground">
-                            {new Date(apt.date).toLocaleDateString()}
+                            {tz.formatDate(apt.date)}
                           </span>
                         </div>
                       </div>
