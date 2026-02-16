@@ -124,7 +124,7 @@ export function registerChatRoutes(app: Express) {
       ];
       
       let initialResponse = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
         messages: currentMessages,
         tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
         tool_choice: "auto",
@@ -170,7 +170,7 @@ export function registerChatRoutes(app: Express) {
           });
           
           const followUpResponse = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
             messages: currentMessages,
             tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
             tool_choice: "auto",
@@ -224,7 +224,7 @@ export function registerChatRoutes(app: Express) {
           });
 
           const patientLookupFollowUp = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
             messages: currentMessages,
             tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
             tool_choice: "auto",
@@ -285,7 +285,7 @@ export function registerChatRoutes(app: Express) {
           });
           
           const lookupFollowUp = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
             messages: currentMessages,
             tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
             tool_choice: "auto",
@@ -366,7 +366,7 @@ export function registerChatRoutes(app: Express) {
           });
           
           const cancelFollowUp = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
             messages: currentMessages,
           });
           
@@ -484,7 +484,7 @@ export function registerChatRoutes(app: Express) {
           });
           
           const rescheduleFollowUp = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
             messages: currentMessages,
           });
           
@@ -717,7 +717,7 @@ export function registerChatRoutes(app: Express) {
             }
 
             const confirmationResponse = await openai.chat.completions.create({
-              model: "gpt-4o-mini",
+              model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
               messages: [
                 { role: "system", content: systemPrompt },
                 ...conversationHistory,
@@ -906,7 +906,7 @@ export function registerChatRoutes(app: Express) {
       ];
 
       let initialResponse = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
         messages: currentMessages,
         tools: [checkAvailabilityFunctionSimple, bookingFunctionSimple],
         tool_choice: "auto",
@@ -940,7 +940,7 @@ export function registerChatRoutes(app: Express) {
           currentMessages.push({ role: "tool", tool_call_id: checkToolCall.id, content: availabilityInfo });
           
           const followUpResponse = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
             messages: currentMessages,
             tools: [checkAvailabilityFunctionSimple, bookingFunctionSimple],
             tool_choice: "auto",
