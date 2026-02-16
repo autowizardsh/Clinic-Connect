@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Building2, Clock, Calendar, MessageSquare, Plus, X, Bell, Globe } from "lucide-react";
+import { Settings, Building2, Clock, Calendar, MessageSquare, Plus, X, Bell, Globe, Palette } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useState } from "react";
@@ -69,6 +69,8 @@ export default function AdminSettings() {
       closeTime: settings?.closeTime || "17:00",
       timezone: settings?.timezone || "Europe/Amsterdam",
       welcomeMessage: settings?.welcomeMessage || "",
+      chatBotName: settings?.chatBotName || "Dental Assistant",
+      chatWidgetColor: settings?.chatWidgetColor || "#0891b2",
       workingDays: settings?.workingDays || [1, 2, 3, 4, 5],
       services: settings?.services || [],
       reminderEnabled: settings?.reminderEnabled || false,
@@ -85,6 +87,8 @@ export default function AdminSettings() {
       closeTime: settings.closeTime,
       timezone: settings.timezone || "Europe/Amsterdam",
       welcomeMessage: settings.welcomeMessage || "",
+      chatBotName: settings.chatBotName || "Dental Assistant",
+      chatWidgetColor: settings.chatWidgetColor || "#0891b2",
       workingDays: settings.workingDays || [1, 2, 3, 4, 5],
       services: settings.services || [],
       reminderEnabled: settings.reminderEnabled ?? false,
@@ -386,6 +390,56 @@ export default function AdminSettings() {
                         />
                       </FormControl>
                       <FormDescription>First message patients see when opening the chat</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="chatBotName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Bot Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Dental Assistant" {...field} data-testid="input-chat-bot-name" />
+                      </FormControl>
+                      <FormDescription>Name shown in the chat widget header</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="chatWidgetColor"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <Palette className="h-4 w-4" />
+                        Widget Color
+                      </FormLabel>
+                      <div className="flex items-center gap-3">
+                        <FormControl>
+                          <input
+                            type="color"
+                            value={field.value}
+                            onChange={field.onChange}
+                            className="w-10 h-10 rounded-md border cursor-pointer p-0.5"
+                            data-testid="input-chat-widget-color"
+                          />
+                        </FormControl>
+                        <Input
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="#0891b2"
+                          className="w-28 font-mono text-sm"
+                          data-testid="input-chat-widget-color-hex"
+                        />
+                        <div
+                          className="flex-1 h-10 rounded-md border"
+                          style={{ backgroundColor: field.value }}
+                        />
+                      </div>
+                      <FormDescription>Theme color for the chat button, header, and message bubbles</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

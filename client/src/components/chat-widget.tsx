@@ -23,10 +23,23 @@ interface Message {
   quickReplies?: QuickReply[];
 }
 
+interface WidgetConfig {
+  botName: string;
+  color: string;
+}
+
 interface ChatWidgetProps {
   embedded?: boolean;
   sessionId?: string;
   initialLanguage?: "en" | "nl";
+}
+
+function getContrastColor(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? "#000000" : "#ffffff";
 }
 
 export function ChatWidget({ embedded = false, sessionId: propSessionId, initialLanguage = "en" }: ChatWidgetProps) {
@@ -36,9 +49,17 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState(propSessionId || "");
   const [language, setLanguage] = useState<"en" | "nl">(initialLanguage);
+  const [widgetConfig, setWidgetConfig] = useState<WidgetConfig>({ botName: "Dental Assistant", color: "#0891b2" });
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch("/api/public/widget-config")
+      .then(r => r.json())
+      .then(data => setWidgetConfig({ botName: data.botName || "Dental Assistant", color: data.color || "#0891b2" }))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (isOpen && !sessionId) {
@@ -57,6 +78,9 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
       inputRef.current.focus();
     }
   }, [isOpen]);
+
+  const themeColor = widgetConfig.color;
+  const textOnTheme = getContrastColor(themeColor);
 
   const initializeSession = async () => {
     try {
@@ -183,7 +207,6 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
               );
             }
           } catch (e) {
-            // Ignore parsing errors
           }
         }
       }
@@ -225,8 +248,15 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
     return (
       <button
         onClick={() => setIsOpen(true)}
-        style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 99999 }}
-        className="h-14 w-14 rounded-full shadow-lg bg-primary text-primary-foreground flex items-center justify-center cursor-pointer border-none outline-none"
+        style={{
+          position: "fixed",
+          bottom: "24px",
+          right: "24px",
+          zIndex: 99999,
+          backgroundColor: themeColor,
+          color: textOnTheme,
+        }}
+        className="h-14 w-14 rounded-full shadow-lg flex items-center justify-center cursor-pointer border-none outline-none"
         data-testid="button-open-chat"
       >
         <MessageSquare className="h-6 w-6" />
@@ -241,17 +271,16 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
 
   return (
     <div className={containerClass} style={containerStyle} data-testid="chat-widget">
-      {/* Header */}
-      <div className="bg-primary p-4 flex items-center justify-between">
+      <div className="p-4 flex items-center justify-between" style={{ backgroundColor: themeColor }}>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-            <MessageSquare className="h-5 w-5 text-white" />
+          <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: `${textOnTheme}20` }}>
+            <MessageSquare className="h-5 w-5" style={{ color: textOnTheme }} />
           </div>
           <div>
-            <div className="text-white font-medium">
-              {language === "nl" ? "Tandarts Assistent" : "Dental Assistant"}
+            <div className="font-medium" style={{ color: textOnTheme }}>
+              {widgetConfig.botName}
             </div>
-            <div className="text-white/70 text-sm">
+            <div className="text-sm" style={{ color: `${textOnTheme}b3` }}>
               {language === "nl" ? "Nu online" : "Online now"}
             </div>
           </div>
@@ -263,7 +292,8 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
             setSessionId("");
           }}>
             <SelectTrigger
-              className="h-7 w-[62px] border-white/30 bg-white/10 text-white text-xs px-2"
+              className="h-7 w-[62px] text-xs px-2"
+              style={{ borderColor: `${textOnTheme}4d`, backgroundColor: `${textOnTheme}1a`, color: textOnTheme }}
               data-testid="select-language"
             >
               <SelectValue />
@@ -284,7 +314,8 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
                   setIsOpen(false);
                 }
               }}
-              className="text-white hover:bg-white/20"
+              className="no-default-hover-elevate"
+              style={{ color: textOnTheme }}
               data-testid="button-close-chat"
             >
               <X className="h-5 w-5" />
@@ -294,7 +325,6 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
       </div>
 
 
-      {/* Messages */}
       <ScrollArea className="flex-1 p-4 chat-messages" ref={scrollRef}>
         <div className="space-y-4">
           {messages.map((message, msgIndex) => {
@@ -307,9 +337,10 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
                   <div
                     className={`max-w-[80%] rounded-lg px-4 py-2 ${
                       message.role === "user"
-                        ? "bg-primary text-primary-foreground rounded-tr-none"
+                        ? "rounded-tr-none"
                         : "bg-muted rounded-tl-none"
                     }`}
+                    style={message.role === "user" ? { backgroundColor: themeColor, color: textOnTheme } : undefined}
                     data-testid={`message-${message.id}`}
                   >
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
@@ -321,7 +352,19 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
                       <button
                         key={idx}
                         onClick={() => handleQuickReply(reply)}
-                        className="text-sm px-3 py-1.5 rounded-full border border-primary text-primary bg-transparent cursor-pointer transition-colors hover:bg-primary hover:text-primary-foreground"
+                        className="text-sm px-3 py-1.5 rounded-full bg-transparent cursor-pointer transition-colors"
+                        style={{
+                          border: `1px solid ${themeColor}`,
+                          color: themeColor,
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = themeColor;
+                          e.currentTarget.style.color = textOnTheme;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "transparent";
+                          e.currentTarget.style.color = themeColor;
+                        }}
                         data-testid={`quick-reply-${idx}`}
                       >
                         {reply.label}
@@ -347,7 +390,6 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
         </div>
       </ScrollArea>
 
-      {/* Input */}
       <div className="p-4 border-t">
         <div className="flex gap-2">
           <Input
@@ -358,12 +400,14 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
             placeholder={language === "nl" ? "Typ uw bericht..." : "Type your message..."}
             disabled={isLoading}
             className="flex-1"
+            style={{ "--tw-ring-color": themeColor } as React.CSSProperties}
             data-testid="input-chat-message"
           />
           <Button
             onClick={sendMessage}
             disabled={!input.trim() || isLoading}
             size="icon"
+            style={{ backgroundColor: themeColor, color: textOnTheme, borderColor: themeColor }}
             data-testid="button-send-message"
           >
             {isLoading ? (

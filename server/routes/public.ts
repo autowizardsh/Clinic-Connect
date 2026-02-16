@@ -40,4 +40,17 @@ export function registerPublicRoutes(app: Express) {
       res.status(500).json({ error: "Failed to fetch settings" });
     }
   });
+
+  app.get("/api/public/widget-config", async (req, res) => {
+    try {
+      const settings = await storage.getClinicSettings();
+      res.json({
+        botName: settings?.chatBotName || "Dental Assistant",
+        color: settings?.chatWidgetColor || "#0891b2",
+      });
+    } catch (error) {
+      console.error("Error fetching widget config:", error);
+      res.json({ botName: "Dental Assistant", color: "#0891b2" });
+    }
+  });
 }

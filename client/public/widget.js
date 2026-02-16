@@ -27,8 +27,29 @@
 
   var WIDGET_URL = WIDGET_BASE + '/chat?lang=' + encodeURIComponent(detectedLang);
 
+  function getLuminance(hex) {
+    var r = parseInt(hex.slice(1, 3), 16);
+    var g = parseInt(hex.slice(3, 5), 16);
+    var b = parseInt(hex.slice(5, 7), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  }
+
   function init() {
     if (document.getElementById('dentalai-widget-container')) return;
+
+    var widgetColor = '#0891b2';
+
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', WIDGET_BASE + '/api/public/widget-config', false);
+      xhr.send();
+      if (xhr.status === 200) {
+        var config = JSON.parse(xhr.responseText);
+        if (config.color) widgetColor = config.color;
+      }
+    } catch(e) {}
+
+    var textColor = getLuminance(widgetColor) > 0.5 ? '#000000' : '#ffffff';
 
     var container = document.createElement('div');
     container.id = 'dentalai-widget-container';
@@ -42,13 +63,13 @@
       '  width: 60px;',
       '  height: 60px;',
       '  border-radius: 50%;',
-      '  background: linear-gradient(135deg, #0891b2, #06b6d4);',
+      '  background: ' + widgetColor + ';',
       '  border: 2px solid rgba(255,255,255,0.3);',
       '  cursor: pointer;',
       '  display: flex;',
       '  align-items: center;',
       '  justify-content: center;',
-      '  box-shadow: 0 4px 14px rgba(8, 145, 178, 0.4), 0 0 0 3px rgba(8, 145, 178, 0.15);',
+      '  box-shadow: 0 4px 14px ' + widgetColor + '66, 0 0 0 3px ' + widgetColor + '26;',
       '  z-index: 2147483646;',
       '  transition: transform 0.2s ease, box-shadow 0.2s ease;',
       '  padding: 0;',
@@ -56,12 +77,12 @@
       '}',
       '#dentalai-widget-button:hover {',
       '  transform: scale(1.08);',
-      '  box-shadow: 0 6px 20px rgba(8, 145, 178, 0.5), 0 0 0 3px rgba(8, 145, 178, 0.2);',
+      '  box-shadow: 0 6px 20px ' + widgetColor + '80, 0 0 0 3px ' + widgetColor + '33;',
       '}',
       '#dentalai-widget-button svg {',
       '  width: 28px;',
       '  height: 28px;',
-      '  fill: white;',
+      '  fill: ' + textColor + ';',
       '  pointer-events: none;',
       '}',
       '#dentalai-widget-backdrop {',

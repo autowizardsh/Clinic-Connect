@@ -111,6 +111,8 @@ export const clinicSettings = pgTable("clinic_settings", {
   closeTime: time("close_time").notNull().default("17:00"),
   timezone: text("timezone").default("Europe/Amsterdam"),
   welcomeMessage: text("welcome_message").default("Welcome to our dental clinic! How can I help you today?"),
+  chatBotName: text("chat_bot_name").default("Dental Assistant"),
+  chatWidgetColor: text("chat_widget_color").default("#0891b2"),
   services: jsonb("services").$type<string[]>().default(["General Checkup", "Teeth Cleaning", "Fillings", "Root Canal", "Teeth Whitening", "Orthodontics"]),
   reminderEnabled: boolean("reminder_enabled").default(false).notNull(),
   reminderChannels: jsonb("reminder_channels").$type<string[]>().default(["email"]),
