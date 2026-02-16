@@ -1076,9 +1076,16 @@ export function registerChatRoutes(app: Express) {
         });
       }
 
+      const simpleConversationHistory = previousMessages.slice(-10).map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      }));
+      const quickReplies = await determineQuickReplies(message, fullResponse, simpleConversationHistory, language);
+
       res.json({
         response: fullResponse,
         booking: bookingResult,
+        quickReplies,
       });
     } catch (error) {
       console.error("Error processing simple chat message:", error);

@@ -22,6 +22,9 @@ export async function determineQuickReplies(
   const containsAny = (text: string, phrases: string[]): boolean =>
     phrases.some(p => text.includes(p));
 
+  const lastQuestion = extractLastQuestion(aiResponse);
+  const lowerLastQ = lastQuestion.toLowerCase();
+
   const isAskingNewOrReturning = (
     (containsAny(lowerResponse, ["new patient", "nieuwe pati"]) &&
      containsAny(lowerResponse, ["returning patient", "existing patient", "terugkerende pati", "bestaande pati"])) ||
@@ -48,7 +51,7 @@ export async function determineQuickReplies(
         ];
   }
 
-  const isAskingContactInfo = containsAny(lowerResponse, [
+  const isAskingContactInfo = containsAny(lowerLastQ, [
     "your name", "full name", "your full name", "first and last name",
     "phone number", "your number", "contact number", "mobile number", "telephone",
     "reference number", "referentienummer", "booking reference", "apt-",
@@ -207,94 +210,133 @@ export async function determineQuickReplies(
     return timeSlots.map(t => ({ label: t, value: t }));
   }
 
-  const mentionedDoctors = extractMentionedDoctors(aiResponse, activeDoctors);
-  const isAskingDoctor = (
-    containsAny(lowerResponse, [
-      "which dentist", "which doctor", "prefer", "preference",
-      "welke tandarts", "voorkeur", "recommend", "would you like to see",
-      "wilt u bij", "specialist", "particular doctor", "specific doctor",
-      "any preference", "doctor preference", "dentist preference",
-      "choose a doctor", "choose a dentist", "select a doctor", "select a dentist",
-      "available doctor", "available dentist",
-    ]) ||
-    (lowerResponse.includes("dr.") && lowerResponse.includes("?"))
-  );
+  const intent = classifyLastQuestionIntent(lowerLastQ, lowerResponse, language);
 
-  if (isAskingDoctor && mentionedDoctors.length > 0) {
-    return mentionedDoctors.map(d => ({
+  if (intent === "date") {
+    return buildDateButtons(settings, language);
+  }
+
+  if (intent === "doctor") {
+    const mentionedDoctors = extractMentionedDoctors(aiResponse, activeDoctors);
+    const doctorsToShow = mentionedDoctors.length > 0 ? mentionedDoctors : activeDoctors.map(d => ({ name: d.name, specialty: d.specialty }));
+    return doctorsToShow.map(d => ({
       label: `Dr. ${d.name} (${d.specialty})`,
       value: language === "nl" ? `Ik wil graag bij Dr. ${d.name}` : `I'd like Dr. ${d.name}`,
     }));
   }
 
-  if (isAskingDoctor && mentionedDoctors.length === 0) {
-    return activeDoctors.map(d => ({
-      label: `Dr. ${d.name} (${d.specialty})`,
-      value: language === "nl" ? `Ik wil graag bij Dr. ${d.name}` : `I'd like Dr. ${d.name}`,
-    }));
-  }
-
-  const isAskingService = containsAny(lowerResponse, [
-    "service", "treatment", "procedure", "type of",
-    "dienst", "behandeling", "welke soort",
-    "which type", "what type", "what kind",
-    "looking for", "need help with", "like to have done",
-    "what brings you", "what do you need", "reason for your visit",
-  ]);
-
-  if (isAskingService) {
+  if (intent === "service") {
     return services.map(s => ({
       label: s,
       value: language === "nl" ? `Ik wil graag ${s}` : `I would like ${s}`,
     }));
   }
 
-  const isAskingDate = containsAny(lowerResponse, [
-    "when would you", "which day", "what day", "which date", "what date",
-    "preferred date", "when do you", "come in", "like to visit",
-    "when are you", "schedule for", "when works", "when suits",
-    "available on", "like to come", "want to come",
-    "wanneer wilt", "welke dag", "welke datum", "wanneer komt",
-    "wanneer past", "wanneer schikt",
-  ]) && !containsAny(lowerResponse, [
-    "time slot", "time would", "which time", "what time", "available times",
-    "available slots", "hoe laat", "welk tijdstip",
-  ]);
-
-  if (isAskingDate) {
-    const now = new Date();
-    const options: { label: string; value: string }[] = [];
-    const dayNamesEN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const dayNamesNL = ["Zondag", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag"];
-    const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
-
-    for (let i = 0; i < 14 && options.length < 5; i++) {
-      const d = new Date(now);
-      d.setDate(d.getDate() + i);
-      if (!workingDays.includes(d.getDay())) continue;
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const dayName = language === "nl" ? dayNamesNL[d.getDay()] : dayNamesEN[d.getDay()];
-      const label = i === 0
-        ? (language === "nl" ? `Vandaag (${dayName})` : `Today (${dayName})`)
-        : i === 1
-        ? (language === "nl" ? `Morgen (${dayName})` : `Tomorrow (${dayName})`)
-        : `${dayName} ${dateStr}`;
-      options.push({ label, value: dateStr });
-    }
-    return options;
-  }
-
   return [];
 }
 
+function extractLastQuestion(aiResponse: string): string {
+  const sentences = aiResponse
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+
+  for (let i = sentences.length - 1; i >= 0; i--) {
+    if (sentences[i].includes("?")) {
+      return sentences[i];
+    }
+  }
+
+  if (sentences.length > 0) {
+    return sentences[sentences.length - 1];
+  }
+  return aiResponse;
+}
+
+function classifyLastQuestionIntent(
+  lowerLastQ: string,
+  lowerFullResponse: string,
+  language: string,
+): "date" | "doctor" | "service" | "none" {
+  const dateKeywords = [
+    "when would you", "which day", "what day", "which date", "what date",
+    "preferred date", "when do you", "come in", "like to visit",
+    "when are you", "schedule for", "when works", "when suits",
+    "like to come", "want to come", "when can you",
+    "schedule your", "like to schedule", "appointment for",
+    "wanneer wilt", "welke dag", "welke datum", "wanneer komt",
+    "wanneer past", "wanneer schikt",
+  ];
+
+  const doctorKeywords = [
+    "which dentist", "which doctor", "prefer a doctor", "preference for a doctor",
+    "doctor preference", "dentist preference", "choose a doctor", "choose a dentist",
+    "select a doctor", "select a dentist", "particular doctor", "specific doctor",
+    "would you like to see", "any preference", "who would you",
+    "welke tandarts", "voorkeur voor een", "een arts kiezen",
+  ];
+
+  const serviceKeywords = [
+    "which service", "what service", "type of service", "what treatment",
+    "which treatment", "type of treatment", "type of appointment",
+    "what kind of", "what type of", "looking for", "what brings you",
+    "reason for your visit", "what do you need",
+    "welke dienst", "welke behandeling", "welke soort", "wat voor",
+  ];
+
+  const isDate = dateKeywords.some(k => lowerLastQ.includes(k));
+  const isDoctor = doctorKeywords.some(k => lowerLastQ.includes(k));
+  const isService = serviceKeywords.some(k => lowerLastQ.includes(k));
+
+  if (isDate && !isDoctor && !isService) return "date";
+  if (isDoctor && !isDate) return "doctor";
+  if (isService && !isDate && !isDoctor) return "service";
+
+  if (isDate) return "date";
+
+  const dateInFull = dateKeywords.some(k => lowerFullResponse.includes(k));
+  const doctorInFull = doctorKeywords.some(k => lowerFullResponse.includes(k));
+  const serviceInFull = serviceKeywords.some(k => lowerFullResponse.includes(k));
+
+  if (dateInFull && !doctorInFull && !serviceInFull) return "date";
+  if (doctorInFull && !dateInFull) return "doctor";
+  if (serviceInFull && !dateInFull && !doctorInFull) return "service";
+
+  return "none";
+}
+
+function buildDateButtons(
+  settings: any,
+  language: string,
+): { label: string; value: string }[] {
+  const now = new Date();
+  const options: { label: string; value: string }[] = [];
+  const dayNamesEN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const dayNamesNL = ["Zondag", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag"];
+  const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
+
+  for (let i = 0; i < 14 && options.length < 5; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    if (!workingDays.includes(d.getDay())) continue;
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const dayName = language === "nl" ? dayNamesNL[d.getDay()] : dayNamesEN[d.getDay()];
+    const label = i === 0
+      ? (language === "nl" ? `Vandaag (${dayName})` : `Today (${dayName})`)
+      : i === 1
+      ? (language === "nl" ? `Morgen (${dayName})` : `Tomorrow (${dayName})`)
+      : `${dayName} ${dateStr}`;
+    options.push({ label, value: dateStr });
+  }
+  return options;
+}
+
 function extractTimeSlotsFromResponse(aiResponse: string): string[] {
-  const lines = aiResponse.split('\n');
   const timeSlots: string[] = [];
   const timePattern = /\b(\d{1,2}:\d{2})\b/g;
 
-  let hasTimeContext = false;
   const lowerFull = aiResponse.toLowerCase();
-  if (
+  const hasTimeContext =
     lowerFull.includes("available") ||
     lowerFull.includes("slot") ||
     lowerFull.includes("time") ||
@@ -305,41 +347,20 @@ function extractTimeSlotsFromResponse(aiResponse: string): string[] {
     lowerFull.includes("select") ||
     lowerFull.includes("pick") ||
     lowerFull.includes("kies") ||
-    lowerFull.includes("here are")
-  ) {
-    hasTimeContext = true;
-  }
+    lowerFull.includes("here are");
 
   if (!hasTimeContext) return [];
 
-  for (const line of lines) {
-    let match;
-    while ((match = timePattern.exec(line)) !== null) {
-      const time = match[1];
-      const hour = parseInt(time.split(':')[0], 10);
-      if (hour >= 6 && hour <= 22) {
-        if (!timeSlots.includes(time)) {
-          timeSlots.push(time);
-        }
-      }
+  let match;
+  while ((match = timePattern.exec(aiResponse)) !== null) {
+    const time = match[1];
+    const hour = parseInt(time.split(':')[0], 10);
+    if (hour >= 6 && hour <= 22 && !timeSlots.includes(time)) {
+      timeSlots.push(time);
     }
   }
 
-  const fullMatch = aiResponse.match(timePattern);
-  if (fullMatch) {
-    for (const time of fullMatch) {
-      const hour = parseInt(time.split(':')[0], 10);
-      if (hour >= 6 && hour <= 22 && !timeSlots.includes(time)) {
-        timeSlots.push(time);
-      }
-    }
-  }
-
-  if (timeSlots.length >= 1) {
-    return timeSlots.slice(0, 10);
-  }
-
-  return [];
+  return timeSlots.slice(0, 10);
 }
 
 function extractMentionedDoctors(
