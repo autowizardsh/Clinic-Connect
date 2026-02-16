@@ -76,11 +76,17 @@ export function registerChatRoutes(app: Express) {
         content: message,
       });
 
-      const [settings, doctors, previousMessages] = await Promise.all([
+      const [settings, doctors, previousMessages, currentSession] = await Promise.all([
         storage.getClinicSettings(),
         storage.getDoctors(),
         storage.getChatMessages(sessionId),
+        storage.getChatSession(sessionId),
       ]);
+
+      const userMessages = previousMessages.filter((m) => m.role === "user");
+      if (userMessages.length <= 1 && currentSession && !currentSession.firstMessageAt) {
+        await storage.updateChatSession(sessionId, { firstMessageAt: new Date(), outcome: "other" } as any);
+      }
 
       const activeDoctors = doctors.filter((d) => d.isActive);
       const services = settings?.services || [
@@ -356,6 +362,10 @@ export function registerChatRoutes(app: Express) {
               message: `Appointment ${refNum} has been cancelled successfully.`,
               referenceNumber: refNum,
             });
+
+            storage.updateChatSession(sessionId, { outcome: "cancelled" } as any).catch((e) =>
+              console.error("Failed to update session outcome:", e)
+            );
           }
           
           currentMessages.push(responseMessage);
@@ -472,6 +482,10 @@ export function registerChatRoutes(app: Express) {
                   newDate: rescheduleData.newDate,
                   newTime: rescheduleData.newTime,
                 });
+
+                storage.updateChatSession(sessionId, { outcome: "rescheduled" } as any).catch((e) =>
+                  console.error("Failed to update session outcome:", e)
+                );
               }
             }
           }
@@ -702,6 +716,10 @@ export function registerChatRoutes(app: Express) {
               time: bookingData.time,
               service: bookingData.service,
             };
+
+            storage.updateChatSession(sessionId, { outcome: "booked" } as any).catch((e) =>
+              console.error("Failed to update session outcome:", e)
+            );
 
             const bookedPatientEmail = bookingData.patientEmail || patient.email;
             if (bookedPatientEmail) {

@@ -44,11 +44,17 @@ export async function processChatMessage(
     content: message,
   });
 
-  const [settings, doctors, previousMessages] = await Promise.all([
+  const [settings, doctors, previousMessages, currentSession] = await Promise.all([
     storage.getClinicSettings(),
     storage.getDoctors(),
     storage.getChatMessages(sessionId),
+    storage.getChatSession(sessionId),
   ]);
+
+  const userMessages = previousMessages.filter((m) => m.role === "user");
+  if (userMessages.length <= 1 && currentSession && !currentSession.firstMessageAt) {
+    await storage.updateChatSession(sessionId, { firstMessageAt: new Date(), outcome: "other" } as any);
+  }
 
   const activeDoctors = doctors.filter((d) => d.isActive);
   const services = settings?.services || ["General Checkup", "Teeth Cleaning"];
@@ -347,6 +353,10 @@ export async function processChatMessage(
           console.error("Failed to cancel reminders:", e)
         );
 
+        storage.updateChatSession(sessionId, { outcome: "cancelled" } as any).catch((e) =>
+          console.error("Failed to update session outcome:", e)
+        );
+
         cancelResult = JSON.stringify({
           success: true,
           message: `Appointment ${refNum} has been cancelled successfully.`,
@@ -498,6 +508,10 @@ export async function processChatMessage(
 
             rescheduleRemindersForAppointment(appointment.id).catch((e) =>
               console.error("Failed to reschedule reminders:", e)
+            );
+
+            storage.updateChatSession(sessionId, { outcome: "rescheduled" } as any).catch((e) =>
+              console.error("Failed to update session outcome:", e)
             );
 
             rescheduleResult = JSON.stringify({
@@ -848,6 +862,10 @@ export async function processChatMessage(
 
       scheduleRemindersForAppointment(appointment.id).catch((e) =>
         console.error("Failed to schedule reminders:", e)
+      );
+
+      storage.updateChatSession(sessionId, { outcome: "booked" } as any).catch((e) =>
+        console.error("Failed to update session outcome:", e)
       );
 
       const confirmationResponse = await openai.chat.completions.create({

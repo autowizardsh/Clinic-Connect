@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, gte, lte, desc, sql, count } from "drizzle-orm";
+import { eq, and, gte, lte, desc, sql, count, isNull, isNotNull } from "drizzle-orm";
 import {
   doctors,
   patients,
@@ -113,6 +113,16 @@ export interface IStorage {
     weekAppointments: number;
     totalPatients: number;
     upcomingAppointments: (Appointment & { patient: Patient })[];
+  }>;
+
+  getChatAnalytics(from?: Date, to?: Date): Promise<{
+    totalSessions: number;
+    interactedSessions: number;
+    booked: number;
+    rescheduled: number;
+    cancelled: number;
+    otherQuestions: number;
+    channelBreakdown: { web: number; whatsapp: number };
   }>;
 }
 
@@ -559,6 +569,62 @@ export class DatabaseStorage implements IStorage {
 
   async deleteRemindersForAppointment(appointmentId: number): Promise<void> {
     await db.delete(appointmentReminders).where(eq(appointmentReminders.appointmentId, appointmentId));
+  }
+
+  async getChatAnalytics(from?: Date, to?: Date) {
+    const conditions = [];
+    if (from) conditions.push(gte(chatSessions.createdAt, from));
+    if (to) conditions.push(lte(chatSessions.createdAt, to));
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [totalResult] = await db.select({ count: count() }).from(chatSessions).where(whereClause);
+
+    const [interactedResult] = await db
+      .select({ count: count() })
+      .from(chatSessions)
+      .where(whereClause ? and(whereClause, isNotNull(chatSessions.firstMessageAt)) : isNotNull(chatSessions.firstMessageAt));
+
+    const outcomeResults = await db
+      .select({
+        outcome: chatSessions.outcome,
+        count: count(),
+      })
+      .from(chatSessions)
+      .where(whereClause ? and(whereClause, isNotNull(chatSessions.outcome)) : isNotNull(chatSessions.outcome))
+      .groupBy(chatSessions.outcome);
+
+    const channelResults = await db
+      .select({
+        channel: chatSessions.channel,
+        count: count(),
+      })
+      .from(chatSessions)
+      .where(whereClause)
+      .groupBy(chatSessions.channel);
+
+    const outcomeMap: Record<string, number> = {};
+    for (const r of outcomeResults) {
+      if (r.outcome) outcomeMap[r.outcome] = r.count;
+    }
+
+    const channelMap: Record<string, number> = {};
+    for (const r of channelResults) {
+      if (r.channel) channelMap[r.channel] = r.count;
+    }
+
+    return {
+      totalSessions: totalResult?.count || 0,
+      interactedSessions: interactedResult?.count || 0,
+      booked: outcomeMap["booked"] || 0,
+      rescheduled: outcomeMap["rescheduled"] || 0,
+      cancelled: outcomeMap["cancelled"] || 0,
+      otherQuestions: outcomeMap["other"] || 0,
+      channelBreakdown: {
+        web: channelMap["web"] || 0,
+        whatsapp: channelMap["whatsapp"] || 0,
+      },
+    };
   }
 }
 
