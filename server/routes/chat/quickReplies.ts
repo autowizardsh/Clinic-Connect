@@ -17,7 +17,6 @@ export async function determineQuickReplies(
   const userMessages = conversationHistory
     .filter(m => m.role === "user")
     .map(m => m.content.toLowerCase());
-  const allUserText = userMessages.join(" ") + " " + lowerMessage;
   const recentUserText = userMessages.slice(-3).join(" ") + " " + lowerMessage;
 
   const containsAny = (text: string, phrases: string[]): boolean =>
@@ -88,7 +87,6 @@ export async function determineQuickReplies(
     "is booked", "appointment confirmed", "booking confirmed", "booking is confirmed",
     "successfully scheduled", "has been scheduled", "appointment scheduled",
     "is geboekt", "is bevestigd", "succesvol geboekt", "afspraak bevestigd",
-    "reference number", "referentienummer",
   ]) && containsAny(lowerResponse, [
     "booked", "confirmed", "scheduled", "geboekt", "bevestigd", "reference", "apt-",
   ]);
@@ -204,47 +202,12 @@ export async function determineQuickReplies(
     return [];
   }
 
-  const hasBookingIntent = containsAny(allUserText, [
-    "book", "appointment", "afspraak", "boek", "schedule", "reserve",
-  ]);
-
-  if (!hasBookingIntent) {
-    return [];
+  const timeSlots = extractTimeSlotsFromResponse(aiResponse);
+  if (timeSlots.length > 0) {
+    return timeSlots.map(t => ({ label: t, value: t }));
   }
 
-  const hasSelectedService = services.some(s => allUserText.includes(s.toLowerCase()));
-  const hasSelectedDoctor = activeDoctors.some(d => allUserText.includes(d.name.toLowerCase()));
-  const userJustPickedTime = /^\d{1,2}:\d{2}$/.test(lowerMessage.trim());
-  const hasSelectedTime = userMessages.some(m => /^\d{1,2}:\d{2}$/.test(m.trim()));
-
-  if (!userJustPickedTime && !hasSelectedTime) {
-    const timeSlotMatch = aiResponse.match(/\b(\d{1,2}:\d{2})\b/g);
-    if (timeSlotMatch && timeSlotMatch.length >= 2) {
-      const uniqueSlots = Array.from(new Set(timeSlotMatch));
-      if (uniqueSlots.length >= 2) {
-        return uniqueSlots.slice(0, 6).map(t => ({
-          label: t,
-          value: t,
-        }));
-      }
-    }
-  }
-
-  const isAskingService = containsAny(lowerResponse, [
-    "service", "treatment", "procedure", "type of",
-    "dienst", "behandeling", "welke soort",
-    "which type", "what type", "what kind",
-    "looking for", "need help with", "like to have done",
-    "what brings you", "what do you need", "reason for your visit",
-  ]) && !hasSelectedService;
-
-  if (isAskingService) {
-    return services.map(s => ({
-      label: s,
-      value: language === "nl" ? `Ik wil graag ${s}` : `I would like ${s}`,
-    }));
-  }
-
+  const mentionedDoctors = extractMentionedDoctors(aiResponse, activeDoctors);
   const isAskingDoctor = (
     containsAny(lowerResponse, [
       "which dentist", "which doctor", "prefer", "preference",
@@ -255,12 +218,34 @@ export async function determineQuickReplies(
       "available doctor", "available dentist",
     ]) ||
     (lowerResponse.includes("dr.") && lowerResponse.includes("?"))
-  ) && !hasSelectedDoctor;
+  );
 
-  if (isAskingDoctor) {
+  if (isAskingDoctor && mentionedDoctors.length > 0) {
+    return mentionedDoctors.map(d => ({
+      label: `Dr. ${d.name} (${d.specialty})`,
+      value: language === "nl" ? `Ik wil graag bij Dr. ${d.name}` : `I'd like Dr. ${d.name}`,
+    }));
+  }
+
+  if (isAskingDoctor && mentionedDoctors.length === 0) {
     return activeDoctors.map(d => ({
       label: `Dr. ${d.name} (${d.specialty})`,
       value: language === "nl" ? `Ik wil graag bij Dr. ${d.name}` : `I'd like Dr. ${d.name}`,
+    }));
+  }
+
+  const isAskingService = containsAny(lowerResponse, [
+    "service", "treatment", "procedure", "type of",
+    "dienst", "behandeling", "welke soort",
+    "which type", "what type", "what kind",
+    "looking for", "need help with", "like to have done",
+    "what brings you", "what do you need", "reason for your visit",
+  ]);
+
+  if (isAskingService) {
+    return services.map(s => ({
+      label: s,
+      value: language === "nl" ? `Ik wil graag ${s}` : `I would like ${s}`,
     }));
   }
 
@@ -268,10 +253,12 @@ export async function determineQuickReplies(
     "when would you", "which day", "what day", "which date", "what date",
     "preferred date", "when do you", "come in", "like to visit",
     "when are you", "schedule for", "when works", "when suits",
-    "what time", "which time", "preferred time", "when is good",
     "available on", "like to come", "want to come",
     "wanneer wilt", "welke dag", "welke datum", "wanneer komt",
     "wanneer past", "wanneer schikt",
+  ]) && !containsAny(lowerResponse, [
+    "time slot", "time would", "which time", "what time", "available times",
+    "available slots", "hoe laat", "welk tijdstip",
   ]);
 
   if (isAskingDate) {
@@ -298,4 +285,85 @@ export async function determineQuickReplies(
   }
 
   return [];
+}
+
+function extractTimeSlotsFromResponse(aiResponse: string): string[] {
+  const lines = aiResponse.split('\n');
+  const timeSlots: string[] = [];
+  const timePattern = /\b(\d{1,2}:\d{2})\b/g;
+
+  let hasTimeContext = false;
+  const lowerFull = aiResponse.toLowerCase();
+  if (
+    lowerFull.includes("available") ||
+    lowerFull.includes("slot") ||
+    lowerFull.includes("time") ||
+    lowerFull.includes("schedule") ||
+    lowerFull.includes("beschikbaar") ||
+    lowerFull.includes("tijdslot") ||
+    lowerFull.includes("choose") ||
+    lowerFull.includes("select") ||
+    lowerFull.includes("pick") ||
+    lowerFull.includes("kies") ||
+    lowerFull.includes("here are")
+  ) {
+    hasTimeContext = true;
+  }
+
+  if (!hasTimeContext) return [];
+
+  for (const line of lines) {
+    let match;
+    while ((match = timePattern.exec(line)) !== null) {
+      const time = match[1];
+      const hour = parseInt(time.split(':')[0], 10);
+      if (hour >= 6 && hour <= 22) {
+        if (!timeSlots.includes(time)) {
+          timeSlots.push(time);
+        }
+      }
+    }
+  }
+
+  const fullMatch = aiResponse.match(timePattern);
+  if (fullMatch) {
+    for (const time of fullMatch) {
+      const hour = parseInt(time.split(':')[0], 10);
+      if (hour >= 6 && hour <= 22 && !timeSlots.includes(time)) {
+        timeSlots.push(time);
+      }
+    }
+  }
+
+  if (timeSlots.length >= 1) {
+    return timeSlots.slice(0, 10);
+  }
+
+  return [];
+}
+
+function extractMentionedDoctors(
+  aiResponse: string,
+  activeDoctors: { id: number; name: string; specialty: string; isActive: boolean }[],
+): { name: string; specialty: string }[] {
+  const lowerResponse = aiResponse.toLowerCase();
+  const mentioned: { name: string; specialty: string }[] = [];
+
+  for (const doctor of activeDoctors) {
+    const nameLower = doctor.name.toLowerCase();
+    const nameParts = nameLower.split(/\s+/);
+    const lastName = nameParts[nameParts.length - 1];
+
+    if (
+      lowerResponse.includes(nameLower) ||
+      lowerResponse.includes(`dr. ${nameLower}`) ||
+      lowerResponse.includes(`dr.${nameLower}`) ||
+      lowerResponse.includes(`dr ${nameLower}`) ||
+      (lastName.length > 3 && lowerResponse.includes(lastName))
+    ) {
+      mentioned.push({ name: doctor.name, specialty: doctor.specialty });
+    }
+  }
+
+  return mentioned;
 }
