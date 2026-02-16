@@ -101,7 +101,7 @@ export async function processChatMessage(
   ];
 
   let initialResponse = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-4o-mini",
     messages: currentMessages,
     tools: allTools,
     tool_choice: "auto",
@@ -133,7 +133,7 @@ export async function processChatMessage(
       });
 
       const emergencyFollowUp = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -184,7 +184,7 @@ export async function processChatMessage(
       });
 
       const followUpResponse = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -261,7 +261,7 @@ export async function processChatMessage(
       });
 
       const lookupFollowUp = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -362,7 +362,7 @@ export async function processChatMessage(
       });
 
       const cancelFollowUp = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: currentMessages,
       });
 
@@ -519,7 +519,7 @@ export async function processChatMessage(
       });
 
       const rescheduleFollowUp = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: currentMessages,
       });
 
@@ -572,7 +572,7 @@ export async function processChatMessage(
       });
 
       const patientLookupFollowUp = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -851,7 +851,7 @@ export async function processChatMessage(
       );
 
       const confirmationResponse = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
           ...conversationHistory,
