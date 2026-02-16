@@ -153,9 +153,6 @@ export const chatSessions = pgTable("chat_sessions", {
   patientId: integer("patient_id").references(() => patients.id),
   language: text("language").default("en"), // en or nl
   status: text("status").default("active"), // active, completed, abandoned
-  outcome: text("outcome"), // booked, rescheduled, cancelled, other, null=no interaction
-  firstMessageAt: timestamp("first_message_at"),
-  channel: text("channel").default("web"), // web, whatsapp
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
