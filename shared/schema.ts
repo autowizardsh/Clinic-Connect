@@ -185,6 +185,21 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 
 // ============================================
+// CHAT ANALYTICS
+// ============================================
+export const chatAnalytics = pgTable("chat_analytics", {
+  id: serial("id").primaryKey(),
+  totalSessions: integer("total_sessions").default(0).notNull(),
+  totalInteractions: integer("total_interactions").default(0).notNull(),
+});
+
+export const insertChatAnalyticsSchema = createInsertSchema(chatAnalytics).omit({
+  id: true,
+});
+export type ChatAnalytics = typeof chatAnalytics.$inferSelect;
+export type InsertChatAnalytics = z.infer<typeof insertChatAnalyticsSchema>;
+
+// ============================================
 // ADMIN USERS (role-based with username/password)
 // ============================================
 export const adminUsers = pgTable("admin_users", {

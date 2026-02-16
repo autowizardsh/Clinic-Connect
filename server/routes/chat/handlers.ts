@@ -42,6 +42,8 @@ export function registerChatRoutes(app: Express) {
         status: "active",
       });
 
+      storage.incrementChatSessions().catch(e => console.error("Failed to increment chat sessions:", e));
+
       const welcomeMessage =
         language === "nl"
           ? `Welkom bij ${settings.clinicName}! Ik ben uw AI-assistent. Ik kan u helpen met het boeken van een afspraak. Hoe kan ik u vandaag helpen?`
@@ -70,11 +72,18 @@ export function registerChatRoutes(app: Express) {
           .json({ error: "Session ID and message required" });
       }
 
+      const existingMessages = await storage.getChatMessages(sessionId);
+      const isFirstUserMessage = !existingMessages.some(m => m.role === "user");
+
       await storage.createChatMessage({
         sessionId,
         role: "user",
         content: message,
       });
+
+      if (isFirstUserMessage) {
+        storage.incrementChatInteractions().catch(e => console.error("Failed to increment chat interactions:", e));
+      }
 
       const [settings, doctors, previousMessages] = await Promise.all([
         storage.getClinicSettings(),
@@ -856,11 +865,18 @@ export function registerChatRoutes(app: Express) {
         return res.status(400).json({ error: "Session ID and message required" });
       }
 
+      const existingMsgs = await storage.getChatMessages(sessionId);
+      const isFirstUserMsg = !existingMsgs.some(m => m.role === "user");
+
       await storage.createChatMessage({
         sessionId,
         role: "user",
         content: message,
       });
+
+      if (isFirstUserMsg) {
+        storage.incrementChatInteractions().catch(e => console.error("Failed to increment chat interactions:", e));
+      }
 
       const [settings, doctors, previousMessages] = await Promise.all([
         storage.getClinicSettings(),

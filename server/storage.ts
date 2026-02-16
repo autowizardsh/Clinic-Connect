@@ -8,6 +8,7 @@ import {
   clinicSettings,
   chatSessions,
   chatMessages,
+  chatAnalytics,
   adminUsers,
   appointmentReminders,
   type Doctor,
@@ -17,6 +18,7 @@ import {
   type ClinicSettings,
   type ChatSession,
   type ChatMessage,
+  type ChatAnalytics,
   type AdminUser,
   type AppointmentReminder,
   type InsertDoctor,
@@ -100,12 +102,19 @@ export interface IStorage {
   getRemindersForAppointment(appointmentId: number): Promise<AppointmentReminder[]>;
   deleteRemindersForAppointment(appointmentId: number): Promise<void>;
 
+  // Chat Analytics
+  incrementChatSessions(): Promise<void>;
+  incrementChatInteractions(): Promise<void>;
+  getChatAnalytics(): Promise<{ totalSessions: number; totalInteractions: number }>;
+
   // Stats
   getAdminStats(): Promise<{
     totalAppointments: number;
     todayAppointments: number;
     totalDoctors: number;
     totalPatients: number;
+    chatSessions: number;
+    chatInteractions: number;
     recentAppointments: (Appointment & { doctor: Doctor; patient: Patient })[];
   }>;
   getDoctorStats(doctorId: number): Promise<{
@@ -414,6 +423,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Stats
+  async incrementChatSessions(): Promise<void> {
+    const [existing] = await db.select().from(chatAnalytics).limit(1);
+    if (existing) {
+      await db.update(chatAnalytics).set({ totalSessions: sql`${chatAnalytics.totalSessions} + 1` }).where(eq(chatAnalytics.id, existing.id));
+    } else {
+      await db.insert(chatAnalytics).values({ totalSessions: 1, totalInteractions: 0 });
+    }
+  }
+
+  async incrementChatInteractions(): Promise<void> {
+    const [existing] = await db.select().from(chatAnalytics).limit(1);
+    if (existing) {
+      await db.update(chatAnalytics).set({ totalInteractions: sql`${chatAnalytics.totalInteractions} + 1` }).where(eq(chatAnalytics.id, existing.id));
+    } else {
+      await db.insert(chatAnalytics).values({ totalSessions: 0, totalInteractions: 1 });
+    }
+  }
+
+  async getChatAnalytics(): Promise<{ totalSessions: number; totalInteractions: number }> {
+    const [row] = await db.select().from(chatAnalytics).limit(1);
+    return { totalSessions: row?.totalSessions || 0, totalInteractions: row?.totalInteractions || 0 };
+  }
+
   async getAdminStats() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -427,6 +459,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(gte(appointments.date, today), lte(appointments.date, tomorrow)));
     const [totalDocs] = await db.select({ count: count() }).from(doctors).where(eq(doctors.isActive, true));
     const [totalPats] = await db.select({ count: count() }).from(patients);
+    const analytics = await this.getChatAnalytics();
 
     const recentAppts = await db
       .select()
@@ -441,6 +474,8 @@ export class DatabaseStorage implements IStorage {
       todayAppointments: todayAppts?.count || 0,
       totalDoctors: totalDocs?.count || 0,
       totalPatients: totalPats?.count || 0,
+      chatSessions: analytics.totalSessions,
+      chatInteractions: analytics.totalInteractions,
       recentAppointments: recentAppts.map((row) => ({
         ...row.appointments,
         doctor: row.doctors!,

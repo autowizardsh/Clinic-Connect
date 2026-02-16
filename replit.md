@@ -8,6 +8,7 @@ Key capabilities:
 - AI chat widget for patient appointment booking (English & Dutch)
 - WhatsApp Business integration using same AI chat engine
 - Appointment reschedule/cancel via chat with reference number + phone verification
+- Chat analytics: tracks session starts (when session ID generated) and first interactions (first user message per session) in admin dashboard
 - Admin dashboard for managing doctors, patients, and appointments
 - Doctor portal for viewing schedules and managing availability
 - Session-based authentication with role-based access control (admin/doctor)

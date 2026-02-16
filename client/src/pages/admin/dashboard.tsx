@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Calendar, Users, UserCheck, Clock } from "lucide-react";
+import { Calendar, Users, UserCheck, Clock, MessageSquare, MousePointerClick } from "lucide-react";
 import { useClinicTimezone } from "@/hooks/use-clinic-timezone";
 import type { Appointment, Doctor, Patient } from "@shared/schema";
 
@@ -12,6 +12,8 @@ export default function AdminDashboard() {
     todayAppointments: number;
     totalDoctors: number;
     totalPatients: number;
+    chatSessions: number;
+    chatInteractions: number;
     recentAppointments: (Appointment & { doctor: Doctor; patient: Patient })[];
   }>({
     queryKey: ["/api/admin/stats"],
@@ -24,8 +26,8 @@ export default function AdminDashboard() {
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">Overview of your clinic</p>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
             <Card key={i}>
               <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                 <Skeleton className="h-4 w-24" />
@@ -48,7 +50,7 @@ export default function AdminDashboard() {
         <p className="text-muted-foreground">Overview of your clinic</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
             <CardTitle className="text-sm font-medium">Today's Appointments</CardTitle>
@@ -95,6 +97,30 @@ export default function AdminDashboard() {
               {stats?.totalPatients ?? 0}
             </div>
             <p className="text-xs text-muted-foreground">Registered patients</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+            <CardTitle className="text-sm font-medium">Chat Sessions</CardTitle>
+            <MessageSquare className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-chat-sessions">
+              {stats?.chatSessions ?? 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Total chats opened</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+            <CardTitle className="text-sm font-medium">Chat Interactions</CardTitle>
+            <MousePointerClick className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-chat-interactions">
+              {stats?.chatInteractions ?? 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Users who sent a message</p>
           </CardContent>
         </Card>
       </div>
