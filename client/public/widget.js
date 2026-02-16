@@ -13,7 +13,19 @@
   } else {
     WIDGET_BASE = window.location.origin;
   }
-  var WIDGET_URL = WIDGET_BASE + '/chat';
+  var detectedLang = 'en';
+  if (scriptTag && scriptTag.getAttribute('data-lang')) {
+    detectedLang = scriptTag.getAttribute('data-lang');
+  } else {
+    var htmlLang = document.documentElement.lang || '';
+    var navLang = navigator.language || navigator.userLanguage || '';
+    var langSource = htmlLang || navLang;
+    if (langSource.toLowerCase().indexOf('nl') === 0) {
+      detectedLang = 'nl';
+    }
+  }
+
+  var WIDGET_URL = WIDGET_BASE + '/chat?lang=' + encodeURIComponent(detectedLang);
 
   function init() {
     if (document.getElementById('dentalai-widget-container')) return;

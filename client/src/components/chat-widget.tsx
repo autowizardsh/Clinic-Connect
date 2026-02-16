@@ -26,15 +26,16 @@ interface Message {
 interface ChatWidgetProps {
   embedded?: boolean;
   sessionId?: string;
+  initialLanguage?: "en" | "nl";
 }
 
-export function ChatWidget({ embedded = false, sessionId: propSessionId }: ChatWidgetProps) {
+export function ChatWidget({ embedded = false, sessionId: propSessionId, initialLanguage = "en" }: ChatWidgetProps) {
   const [isOpen, setIsOpen] = useState(embedded);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState(propSessionId || "");
-  const [language, setLanguage] = useState<"en" | "nl">("en");
+  const [language, setLanguage] = useState<"en" | "nl">(initialLanguage);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
