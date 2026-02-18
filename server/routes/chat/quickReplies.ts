@@ -52,21 +52,27 @@ export async function determineQuickReplies(
   }
 
   const isAskingWalkinOrRegular = (
-    (containsAny(lowerResponse, ["walk-in", "walk in", "inloopafspraak", "inloop"]) &&
-     containsAny(lowerResponse, ["regular", "specific", "scheduled", "reguliere", "specifieke", "ingeplande"])) ||
-    (containsAny(lowerResponse, ["walk-in", "walk in"]) &&
-     containsAny(lowerResponse, ["appointment", "visit", "booking"]) &&
+    (containsAny(lowerResponse, ["walk-in", "walk in", "inloopafspraak", "inloop", "inloopbezoek"]) &&
+     containsAny(lowerResponse, ["specific time", "specific slot", "particular dentist", "particular doctor", "regular", "scheduled", "reguliere", "specifieke", "ingeplande"])) ||
+    (containsAny(lowerResponse, ["walk-in", "walk in", "general time window", "time window", "flexible time"]) &&
+     containsAny(lowerResponse, ["specific", "particular", "time slot", "exact time"]) &&
+     lowerResponse.includes("?")) ||
+    (containsAny(lowerLastQ, ["walk-in", "walk in", "time window", "general time", "inloop", "flexible"]) &&
+     containsAny(lowerLastQ, ["specific", "particular", "exact", "specifieke"]) &&
+     lowerLastQ.includes("?")) ||
+    (containsAny(lowerResponse, ["specific time", "exact time", "specifieke tijd"]) &&
+     containsAny(lowerResponse, ["general time", "time window", "morning or afternoon", "ochtend of middag", "flexible"]) &&
      lowerResponse.includes("?"))
   );
 
   if (isAskingWalkinOrRegular) {
     return language === "nl"
       ? [
-          { label: "Reguliere afspraak", value: "Ik wil een reguliere afspraak met een specifieke arts" },
+          { label: "Specifieke tijd boeken", value: "Ik wil een specifieke tijd boeken bij een tandarts" },
           { label: "Inloopbezoek", value: "Ik wil graag een inloopbezoek (walk-in)" },
         ]
       : [
-          { label: "Regular appointment", value: "I would like a regular appointment with a specific doctor" },
+          { label: "Book a specific time", value: "I would like to book a specific time with a dentist" },
           { label: "Walk-in visit", value: "I would like a walk-in visit" },
         ];
   }
