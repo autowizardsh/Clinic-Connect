@@ -427,11 +427,11 @@ export function registerChatRoutes(app: Express) {
                 throw new Error(`SLOT_UNAVAILABLE: This time slot is already booked and no alternatives found for this day. Please try a different day.`);
               }
 
-              let patient = await storage.getPatientByPhone(bookingData.patientPhone);
-              if (!patient) {
-                patient = await storage.createPatient({ name: bookingData.patientName, phone: bookingData.patientPhone, email: bookingData.patientEmail || null, notes: `Booked via chat on ${new Date().toLocaleDateString()}` });
-                console.log("Created new patient:", patient.id);
-              }
+              let patient = await storage.findOrCreatePatient({
+                name: bookingData.patientName, phone: bookingData.patientPhone,
+                email: bookingData.patientEmail || null, notes: `Booked via chat on ${new Date().toLocaleDateString()}`,
+              });
+              console.log("Using patient:", patient.id, patient.name);
 
               const appointment = await storage.createAppointment({
                 patientId: patient.id, doctorId: bookingData.doctorId, date: appointmentDateTime,
@@ -522,10 +522,10 @@ export function registerChatRoutes(app: Express) {
               const representativeTime = timePeriodMap[walkinData.timePeriod] || wOpenTime.slice(0, 5);
               const appointmentDateTime = clinicTimeToUTC(walkinData.date, representativeTime, clinicTimezone);
 
-              let wPatient = await storage.getPatientByPhone(walkinData.patientPhone);
-              if (!wPatient) {
-                wPatient = await storage.createPatient({ name: walkinData.patientName, phone: walkinData.patientPhone, email: walkinData.patientEmail || null, notes: `Walk-in booked via chat on ${new Date().toLocaleDateString()}` });
-              }
+              let wPatient = await storage.findOrCreatePatient({
+                name: walkinData.patientName, phone: walkinData.patientPhone,
+                email: walkinData.patientEmail || null, notes: `Walk-in booked via chat on ${new Date().toLocaleDateString()}`,
+              });
 
               const wAppointment = await storage.createAppointment({
                 patientId: wPatient.id, doctorId: null, date: appointmentDateTime,
@@ -791,15 +791,10 @@ export function registerChatRoutes(app: Express) {
                 ? "Sorry, dit tijdslot is al geboekt. Kies alstublieft een ander tijdstip."
                 : "Sorry, this time slot is already booked. Please choose a different time.";
             } else {
-              let patient = await storage.getPatientByPhone(bookingData.patientPhone);
-              if (!patient) {
-                patient = await storage.createPatient({
-                  name: bookingData.patientName,
-                  phone: bookingData.patientPhone,
-                  email: bookingData.patientEmail || null,
-                  notes: `Booked via WhatsApp on ${new Date().toLocaleDateString()}`,
-                });
-              }
+              let patient = await storage.findOrCreatePatient({
+                name: bookingData.patientName, phone: bookingData.patientPhone,
+                email: bookingData.patientEmail || null, notes: `Booked via WhatsApp on ${new Date().toLocaleDateString()}`,
+              });
 
               const appointment = await storage.createAppointment({
                 patientId: patient.id,

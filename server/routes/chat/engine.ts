@@ -636,7 +636,7 @@ export async function processChatMessage(
         }
 
         if (requestedDate === today) {
-          const currentHour = parseInt(clinicNow.timeStr.split(":")[0]);
+          const currentHour = clinicNow.hours;
           for (const period of periods) {
             const periodEndHour = period.name === "morning" ? 12 : period.name === "afternoon" ? 16 : closeH;
             if (currentHour >= periodEndHour) {
@@ -720,15 +720,10 @@ export async function processChatMessage(
       const representativeTime = timePeriodMap[walkinData.timePeriod] || openTime.slice(0, 5);
       const appointmentDateTime = clinicTimeToUTC(walkinData.date, representativeTime, clinicTimezone);
 
-      let patient = await storage.getPatientByPhone(walkinData.patientPhone);
-      if (!patient) {
-        patient = await storage.createPatient({
-          name: walkinData.patientName,
-          phone: walkinData.patientPhone,
-          email: walkinData.patientEmail || null,
-          notes: `Walk-in booked via ${source} on ${new Date().toLocaleDateString()}`,
-        });
-      }
+      let patient = await storage.findOrCreatePatient({
+        name: walkinData.patientName, phone: walkinData.patientPhone,
+        email: walkinData.patientEmail || null, notes: `Walk-in booked via ${source} on ${new Date().toLocaleDateString()}`,
+      });
 
       const appointment = await storage.createAppointment({
         patientId: patient.id,
@@ -1002,15 +997,10 @@ export async function processChatMessage(
         }
       }
 
-      let patient = await storage.getPatientByPhone(bookingData.patientPhone);
-      if (!patient) {
-        patient = await storage.createPatient({
-          name: bookingData.patientName,
-          phone: bookingData.patientPhone,
-          email: bookingData.patientEmail || null,
-          notes: `Booked via ${source} on ${new Date().toLocaleDateString()}`,
-        });
-      }
+      let patient = await storage.findOrCreatePatient({
+        name: bookingData.patientName, phone: bookingData.patientPhone,
+        email: bookingData.patientEmail || null, notes: `Booked via ${source} on ${new Date().toLocaleDateString()}`,
+      });
 
       const appointment = await storage.createAppointment({
         patientId: patient.id,

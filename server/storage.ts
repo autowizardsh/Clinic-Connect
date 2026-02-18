@@ -54,6 +54,7 @@ export interface IStorage {
   getPatientByPhone(phone: string): Promise<Patient | undefined>;
   getPatientByEmail(email: string): Promise<Patient | undefined>;
   createPatient(patient: InsertPatient): Promise<Patient>;
+  findOrCreatePatient(data: { name: string; phone: string; email?: string | null; notes?: string | null }): Promise<Patient>;
   updatePatient(id: number, patient: Partial<InsertPatient>): Promise<Patient | undefined>;
   deletePatient(id: number): Promise<void>;
 
@@ -202,6 +203,45 @@ export class DatabaseStorage implements IStorage {
   async createPatient(patient: InsertPatient): Promise<Patient> {
     const [result] = await db.insert(patients).values(patient).returning();
     return result;
+  }
+
+  async findOrCreatePatient(data: { name: string; phone: string; email?: string | null; notes?: string | null }): Promise<Patient> {
+    const phone = (data.phone || "").trim();
+    const email = (data.email || "").trim().toLowerCase();
+
+    let patient: Patient | undefined;
+
+    if (email) {
+      patient = await this.getPatientByEmail(email);
+    }
+    if (!patient && phone) {
+      patient = await this.getPatientByPhone(phone);
+    }
+
+    if (patient) {
+      const updates: Partial<InsertPatient> = {};
+      if (data.name && data.name.trim().length > 1 && data.name.toLowerCase() !== patient.name.toLowerCase()) {
+        updates.name = data.name;
+      }
+      if (phone && phone.length >= 6 && phone !== patient.phone) {
+        updates.phone = phone;
+      }
+      if (email && email !== (patient.email || "").toLowerCase()) {
+        updates.email = data.email!;
+      }
+      if (Object.keys(updates).length > 0) {
+        const updated = await this.updatePatient(patient.id, updates);
+        if (updated) return updated;
+      }
+      return patient;
+    }
+
+    return this.createPatient({
+      name: data.name,
+      phone: phone,
+      email: data.email || null,
+      notes: data.notes || null,
+    });
   }
 
   async updatePatient(id: number, patient: Partial<InsertPatient>): Promise<Patient | undefined> {

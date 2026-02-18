@@ -30,7 +30,7 @@ Key capabilities:
 - **New patient**: Asks for full details (name, phone, email) as before
 - Quick reply buttons shown: "New patient" / "Returning patient" (EN) or "Nieuwe patient" / "Terugkerende patient" (NL)
 - If returning patient email not found, falls back to new patient flow
-- Storage method: `getPatientByEmail(email)` in `server/storage.ts`
+- **Patient deduplication**: `findOrCreatePatient()` in `server/storage.ts` looks up by email first, then phone before creating new records. Updates existing patient info (name, phone, email) if changed. Used across all booking channels (chat, WhatsApp, voice agent, walk-in).
 
 ### Walk-in Appointments
 - Patients can choose walk-in visits instead of booking specific time slots

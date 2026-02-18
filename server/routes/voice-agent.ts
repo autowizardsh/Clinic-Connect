@@ -196,15 +196,10 @@ export function registerVoiceAgentRoutes(app: Express) {
         });
       }
 
-      let patient = await storage.getPatientByPhone(patientPhone);
-      if (!patient) {
-        patient = await storage.createPatient({
-          name: patientName,
-          phone: patientPhone,
-          email: patientEmail || null,
-          notes: `Booked via voice agent on ${new Date().toLocaleDateString()}`,
-        });
-      }
+      let patient = await storage.findOrCreatePatient({
+        name: patientName, phone: patientPhone,
+        email: patientEmail || null, notes: `Booked via voice agent on ${new Date().toLocaleDateString()}`,
+      });
 
       const appointment = await storage.createAppointment({
         patientId: patient.id,
@@ -560,7 +555,7 @@ export function registerVoiceAgentRoutes(app: Express) {
       if (closeH > 16) periods.push({ name: "evening", available: true, description: `16:00 - ${closeTime.slice(0, 5)}` });
 
       if (date === clinicNow.dateStr) {
-        const currentHour = parseInt(clinicNow.timeStr.split(":")[0]);
+        const currentHour = clinicNow.hours;
         for (const period of periods) {
           const periodEndHour = period.name === "morning" ? 12 : period.name === "afternoon" ? 16 : closeH;
           if (currentHour >= periodEndHour) period.available = false;
@@ -625,15 +620,10 @@ export function registerVoiceAgentRoutes(app: Express) {
       const representativeTime = timePeriodMap[timePeriod] || openTime.slice(0, 5);
       const appointmentDateTime = clinicTimeToUTC(date, representativeTime, clinicTimezone);
 
-      let patient = await storage.getPatientByPhone(patientPhone);
-      if (!patient) {
-        patient = await storage.createPatient({
-          name: patientName,
-          phone: patientPhone,
-          email: patientEmail || null,
-          notes: `Walk-in booked via voice on ${new Date().toLocaleDateString()}`,
-        });
-      }
+      let patient = await storage.findOrCreatePatient({
+        name: patientName, phone: patientPhone,
+        email: patientEmail || null, notes: `Walk-in booked via voice on ${new Date().toLocaleDateString()}`,
+      });
 
       const appointment = await storage.createAppointment({
         patientId: patient.id,
