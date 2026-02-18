@@ -13,7 +13,10 @@ import {
   lookupPatientByEmailFunction,
   checkAvailabilityFunctionSimple,
   bookingFunctionSimple,
+  checkWalkinAvailabilityFunction,
+  bookWalkinFunction,
 } from "./tools";
+import { scheduleRemindersForAppointment } from "../../services/reminders";
 import { buildSystemPrompt } from "./prompts";
 import { findAvailableSlots, getAvailableSlotsForDate } from "./availability";
 import { determineQuickReplies } from "./quickReplies";
@@ -135,7 +138,7 @@ export function registerChatRoutes(app: Express) {
       let initialResponse = await openai.chat.completions.create({
         model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
         messages: currentMessages,
-        tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
+        tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction, checkWalkinAvailabilityFunction, bookWalkinFunction],
         tool_choice: "auto",
       });
 
@@ -181,7 +184,7 @@ export function registerChatRoutes(app: Express) {
           const followUpResponse = await openai.chat.completions.create({
             model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
             messages: currentMessages,
-            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
+            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction, checkWalkinAvailabilityFunction, bookWalkinFunction],
             tool_choice: "auto",
           });
           
@@ -235,7 +238,7 @@ export function registerChatRoutes(app: Express) {
           const patientLookupFollowUp = await openai.chat.completions.create({
             model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
             messages: currentMessages,
-            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
+            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction, checkWalkinAvailabilityFunction, bookWalkinFunction],
             tool_choice: "auto",
           });
 
@@ -296,7 +299,7 @@ export function registerChatRoutes(app: Express) {
           const lookupFollowUp = await openai.chat.completions.create({
             model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
             messages: currentMessages,
-            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction],
+            tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction, checkWalkinAvailabilityFunction, bookWalkinFunction],
             tool_choice: "auto",
           });
           
@@ -810,6 +813,361 @@ export function registerChatRoutes(app: Express) {
               role: "assistant",
               content: fullResponse,
             });
+          }
+        } else if (toolCall.function?.name === "check_walkin_availability") {
+          try {
+            const checkData = JSON.parse(toolCall.function.arguments);
+            const requestedDate = checkData.date;
+
+            if (requestedDate < today) {
+              const result = JSON.stringify({ available: false, error: "Cannot check availability for past dates." });
+              currentMessages.push(responseMessage);
+              currentMessages.push({ role: "tool", tool_call_id: toolCall.id, content: result });
+            } else {
+              const openTime = settings?.openTime || "09:00";
+              const closeTime = settings?.closeTime || "17:00";
+              const [openH] = openTime.split(":").map(Number);
+              const [closeH] = closeTime.split(":").map(Number);
+
+              const periods: { name: string; available: boolean; description: string }[] = [];
+
+              if (openH < 12) {
+                periods.push({ name: "morning", available: true, description: `${openTime.slice(0, 5)} - 12:00` });
+              }
+              if (openH < 16 && closeH > 12) {
+                periods.push({ name: "afternoon", available: true, description: `12:00 - ${Math.min(closeH, 16)}:00` });
+              }
+              if (closeH > 16) {
+                periods.push({ name: "evening", available: true, description: `16:00 - ${closeTime.slice(0, 5)}` });
+              }
+
+              if (requestedDate === today) {
+                const currentHour = parseInt(clinicNow.timeStr.split(":")[0]);
+                for (const period of periods) {
+                  const periodEndHour = period.name === "morning" ? 12 : period.name === "afternoon" ? 16 : closeH;
+                  if (currentHour >= periodEndHour) {
+                    period.available = false;
+                  }
+                }
+              }
+
+              const dayOfWeek = new Date(requestedDate + "T12:00:00").getDay();
+              const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
+              if (!workingDays.includes(dayOfWeek)) {
+                for (const period of periods) {
+                  period.available = false;
+                }
+              }
+
+              const result = JSON.stringify({
+                date: requestedDate,
+                periods: periods.filter(p => p.available),
+                clinicOpen: openTime.slice(0, 5),
+                clinicClose: closeTime.slice(0, 5),
+                isWorkingDay: workingDays.includes(dayOfWeek),
+              });
+
+              currentMessages.push(responseMessage);
+              currentMessages.push({ role: "tool", tool_call_id: toolCall.id, content: result });
+            }
+
+            const walkinCheckFollowUp = await openai.chat.completions.create({
+              model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+              messages: currentMessages,
+              tools: [checkAvailabilityFunction, bookingFunction, lookupAppointmentFunction, cancelAppointmentFunction, rescheduleAppointmentFunction, lookupPatientByEmailFunction, checkWalkinAvailabilityFunction, bookWalkinFunction],
+              tool_choice: "auto",
+            });
+
+            responseMessage = walkinCheckFollowUp.choices[0]?.message;
+
+            if (responseMessage?.tool_calls && responseMessage.tool_calls.length > 0) {
+              const followUpToolCall = responseMessage.tool_calls[0] as { id: string; type: string; function: { name: string; arguments: string } };
+              if (followUpToolCall.function?.name === "book_walkin") {
+                try {
+                  const walkinData = JSON.parse(followUpToolCall.function.arguments);
+                  const invalidNames = ["pending", "unknown", "test", "user", "patient", "name", "n/a", "na", "tbd"];
+                  const wPatientName = (walkinData.patientName || "").trim().toLowerCase();
+                  const wPatientPhone = (walkinData.patientPhone || "").trim();
+
+                  if (!walkinData.patientName || wPatientName.length < 2) {
+                    throw new Error("MISSING_INFO: I need your full name to book the walk-in visit. What is your name?");
+                  }
+                  if (invalidNames.some((n) => wPatientName.split(/\s+/).includes(n))) {
+                    throw new Error("MISSING_INFO: I need your real full name. Could you please tell me your name?");
+                  }
+                  if (!wPatientPhone || wPatientPhone.length < 6) {
+                    throw new Error("MISSING_INFO: I need your phone number to book the walk-in visit. What is your phone number?");
+                  }
+                  if (!walkinData.patientEmail) {
+                    throw new Error("MISSING_INFO: I need your email address to send the appointment confirmation. What is your email?");
+                  }
+
+                  const wOpenTime = settings?.openTime || "09:00";
+                  const timePeriodMap: Record<string, string> = { morning: wOpenTime.slice(0, 5), afternoon: "12:00", evening: "16:00" };
+                  const representativeTime = timePeriodMap[walkinData.timePeriod] || wOpenTime.slice(0, 5);
+                  const appointmentDateTime = clinicTimeToUTC(walkinData.date, representativeTime, clinicTimezone);
+
+                  let wPatient = await storage.getPatientByPhone(walkinData.patientPhone);
+                  if (!wPatient) {
+                    wPatient = await storage.createPatient({
+                      name: walkinData.patientName,
+                      phone: walkinData.patientPhone,
+                      email: walkinData.patientEmail || null,
+                      notes: `Walk-in booked via chat on ${new Date().toLocaleDateString()}`,
+                    });
+                  }
+
+                  const wAppointment = await storage.createAppointment({
+                    patientId: wPatient.id,
+                    doctorId: null,
+                    date: appointmentDateTime,
+                    duration: settings?.appointmentDuration || 30,
+                    status: "scheduled",
+                    service: walkinData.service,
+                    notes: walkinData.notes || `Walk-in - ${walkinData.timePeriod}`,
+                    source: "chat",
+                    appointmentType: "walk-in",
+                    timePeriod: walkinData.timePeriod,
+                  });
+
+                  bookingResult = {
+                    success: true,
+                    appointmentId: wAppointment.id,
+                    referenceNumber: wAppointment.referenceNumber,
+                    patientName: walkinData.patientName,
+                    doctorName: "Any available doctor",
+                    date: walkinData.date,
+                    time: walkinData.timePeriod,
+                    service: walkinData.service,
+                  };
+
+                  const wPatientEmail = walkinData.patientEmail || wPatient.email;
+                  if (wPatientEmail) {
+                    sendAppointmentConfirmationEmail({
+                      patientEmail: wPatientEmail,
+                      patientName: walkinData.patientName,
+                      doctorName: "Any available doctor (walk-in)",
+                      date: appointmentDateTime,
+                      service: walkinData.service,
+                      duration: settings?.appointmentDuration || 30,
+                      referenceNumber: wAppointment.referenceNumber!,
+                    }).catch((e) => console.error("Failed to send walk-in confirmation email:", e));
+                  }
+
+                  scheduleRemindersForAppointment(wAppointment.id).catch((e) =>
+                    console.error("Failed to schedule walk-in reminders:", e)
+                  );
+
+                  const walkinConfirmation = await openai.chat.completions.create({
+                    model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+                    messages: [
+                      { role: "system", content: systemPrompt },
+                      ...conversationHistory,
+                      { role: "user", content: message },
+                      responseMessage,
+                      {
+                        role: "tool",
+                        tool_call_id: followUpToolCall.id,
+                        content: JSON.stringify({
+                          success: true,
+                          message: `Walk-in appointment registered! Reference number: ${wAppointment.referenceNumber}. Come in on ${walkinData.date} during the ${walkinData.timePeriod} (${timePeriodMap[walkinData.timePeriod]} onwards). The first available doctor will see you.`,
+                          referenceNumber: wAppointment.referenceNumber,
+                          details: bookingResult,
+                        }),
+                      },
+                    ],
+                  });
+
+                  const walkinContent = walkinConfirmation.choices[0]?.message?.content ||
+                    (language === "nl"
+                      ? `Uw walk-in afspraak is geregistreerd! Referentienummer: ${wAppointment.referenceNumber}.`
+                      : `Your walk-in appointment is registered! Reference: ${wAppointment.referenceNumber}. Come in on ${walkinData.date} during the ${walkinData.timePeriod}.`);
+
+                  const wChunkSize = 3;
+                  for (let i = 0; i < walkinContent.length; i += wChunkSize) {
+                    const chunk = walkinContent.slice(i, i + wChunkSize);
+                    res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+                    await new Promise(resolve => setTimeout(resolve, 15));
+                  }
+                  fullResponse = walkinContent;
+
+                  await storage.createChatMessage({ sessionId, role: "assistant", content: fullResponse });
+                } catch (walkinBookError: any) {
+                  console.error("Walk-in booking error:", walkinBookError);
+                  let walkinErrMsg = "";
+                  if (walkinBookError.message?.startsWith("MISSING_INFO:")) {
+                    walkinErrMsg = walkinBookError.message.replace("MISSING_INFO: ", "");
+                  } else {
+                    walkinErrMsg = language === "nl"
+                      ? "Er is een fout opgetreden bij het registreren van uw walk-in afspraak. Probeer het opnieuw."
+                      : "There was an error registering your walk-in appointment. Please try again.";
+                  }
+                  const eChunkSize = 3;
+                  for (let i = 0; i < walkinErrMsg.length; i += eChunkSize) {
+                    const chunk = walkinErrMsg.slice(i, i + eChunkSize);
+                    res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+                    await new Promise(resolve => setTimeout(resolve, 15));
+                  }
+                  fullResponse = walkinErrMsg;
+                  await storage.createChatMessage({ sessionId, role: "assistant", content: fullResponse });
+                }
+              } else {
+                const walkinFollowContent = responseMessage?.content || "";
+                if (walkinFollowContent) {
+                  const fChunkSize = 3;
+                  for (let i = 0; i < walkinFollowContent.length; i += fChunkSize) {
+                    const chunk = walkinFollowContent.slice(i, i + fChunkSize);
+                    res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+                    await new Promise(resolve => setTimeout(resolve, 15));
+                  }
+                  fullResponse = walkinFollowContent;
+                  await storage.createChatMessage({ sessionId, role: "assistant", content: fullResponse });
+                }
+              }
+            } else {
+              const walkinCheckContent = responseMessage?.content || "";
+              if (walkinCheckContent) {
+                const wcChunkSize = 3;
+                for (let i = 0; i < walkinCheckContent.length; i += wcChunkSize) {
+                  const chunk = walkinCheckContent.slice(i, i + wcChunkSize);
+                  res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+                  await new Promise(resolve => setTimeout(resolve, 15));
+                }
+                fullResponse = walkinCheckContent;
+                await storage.createChatMessage({ sessionId, role: "assistant", content: fullResponse });
+              }
+            }
+          } catch (walkinCheckErr) {
+            console.error("Walk-in availability check error:", walkinCheckErr);
+          }
+        } else if (toolCall.function?.name === "book_walkin") {
+          try {
+            const walkinData = JSON.parse(toolCall.function.arguments);
+            const invalidNames = ["pending", "unknown", "test", "user", "patient", "name", "n/a", "na", "tbd"];
+            const bwPatientName = (walkinData.patientName || "").trim().toLowerCase();
+            const bwPatientPhone = (walkinData.patientPhone || "").trim();
+
+            if (!walkinData.patientName || bwPatientName.length < 2) {
+              throw new Error("MISSING_INFO: I need your full name to book the walk-in visit. What is your name?");
+            }
+            if (invalidNames.some((n) => bwPatientName.split(/\s+/).includes(n))) {
+              throw new Error("MISSING_INFO: I need your real full name. Could you please tell me your name?");
+            }
+            if (!bwPatientPhone || bwPatientPhone.length < 6) {
+              throw new Error("MISSING_INFO: I need your phone number to book the walk-in visit. What is your phone number?");
+            }
+            if (!walkinData.patientEmail) {
+              throw new Error("MISSING_INFO: I need your email address to send the appointment confirmation. What is your email?");
+            }
+
+            const bwOpenTime = settings?.openTime || "09:00";
+            const timePeriodMap: Record<string, string> = { morning: bwOpenTime.slice(0, 5), afternoon: "12:00", evening: "16:00" };
+            const representativeTime = timePeriodMap[walkinData.timePeriod] || bwOpenTime.slice(0, 5);
+            const appointmentDateTime = clinicTimeToUTC(walkinData.date, representativeTime, clinicTimezone);
+
+            let bwPatient = await storage.getPatientByPhone(walkinData.patientPhone);
+            if (!bwPatient) {
+              bwPatient = await storage.createPatient({
+                name: walkinData.patientName,
+                phone: walkinData.patientPhone,
+                email: walkinData.patientEmail || null,
+                notes: `Walk-in booked via chat on ${new Date().toLocaleDateString()}`,
+              });
+            }
+
+            const bwAppointment = await storage.createAppointment({
+              patientId: bwPatient.id,
+              doctorId: null,
+              date: appointmentDateTime,
+              duration: settings?.appointmentDuration || 30,
+              status: "scheduled",
+              service: walkinData.service,
+              notes: walkinData.notes || `Walk-in - ${walkinData.timePeriod}`,
+              source: "chat",
+              appointmentType: "walk-in",
+              timePeriod: walkinData.timePeriod,
+            });
+
+            bookingResult = {
+              success: true,
+              appointmentId: bwAppointment.id,
+              referenceNumber: bwAppointment.referenceNumber,
+              patientName: walkinData.patientName,
+              doctorName: "Any available doctor",
+              date: walkinData.date,
+              time: walkinData.timePeriod,
+              service: walkinData.service,
+            };
+
+            const bwPatientEmail = walkinData.patientEmail || bwPatient.email;
+            if (bwPatientEmail) {
+              sendAppointmentConfirmationEmail({
+                patientEmail: bwPatientEmail,
+                patientName: walkinData.patientName,
+                doctorName: "Any available doctor (walk-in)",
+                date: appointmentDateTime,
+                service: walkinData.service,
+                duration: settings?.appointmentDuration || 30,
+                referenceNumber: bwAppointment.referenceNumber!,
+              }).catch((e) => console.error("Failed to send walk-in confirmation email:", e));
+            }
+
+            scheduleRemindersForAppointment(bwAppointment.id).catch((e) =>
+              console.error("Failed to schedule walk-in reminders:", e)
+            );
+
+            const bwConfirmation = await openai.chat.completions.create({
+              model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+              messages: [
+                { role: "system", content: systemPrompt },
+                ...conversationHistory,
+                { role: "user", content: message },
+                responseMessage,
+                {
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: JSON.stringify({
+                    success: true,
+                    message: `Walk-in appointment registered! Reference number: ${bwAppointment.referenceNumber}. Come in on ${walkinData.date} during the ${walkinData.timePeriod} (${timePeriodMap[walkinData.timePeriod]} onwards). The first available doctor will see you.`,
+                    referenceNumber: bwAppointment.referenceNumber,
+                    details: bookingResult,
+                  }),
+                },
+              ],
+            });
+
+            const bwContent = bwConfirmation.choices[0]?.message?.content ||
+              (language === "nl"
+                ? `Uw walk-in afspraak is geregistreerd! Referentienummer: ${bwAppointment.referenceNumber}.`
+                : `Your walk-in appointment is registered! Reference: ${bwAppointment.referenceNumber}. Come in on ${walkinData.date} during the ${walkinData.timePeriod}.`);
+
+            const bwChunkSize = 3;
+            for (let i = 0; i < bwContent.length; i += bwChunkSize) {
+              const chunk = bwContent.slice(i, i + bwChunkSize);
+              res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+              await new Promise(resolve => setTimeout(resolve, 15));
+            }
+            fullResponse = bwContent;
+
+            await storage.createChatMessage({ sessionId, role: "assistant", content: fullResponse });
+          } catch (bwError: any) {
+            console.error("Walk-in booking error:", bwError);
+            let bwErrMsg = "";
+            if (bwError.message?.startsWith("MISSING_INFO:")) {
+              bwErrMsg = bwError.message.replace("MISSING_INFO: ", "");
+            } else {
+              bwErrMsg = language === "nl"
+                ? "Er is een fout opgetreden bij het registreren van uw walk-in afspraak. Probeer het opnieuw."
+                : "There was an error registering your walk-in appointment. Please try again.";
+            }
+            const bwEChunkSize = 3;
+            for (let i = 0; i < bwErrMsg.length; i += bwEChunkSize) {
+              const chunk = bwErrMsg.slice(i, i + bwEChunkSize);
+              res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+              await new Promise(resolve => setTimeout(resolve, 15));
+            }
+            fullResponse = bwErrMsg;
+            await storage.createChatMessage({ sessionId, role: "assistant", content: fullResponse });
           }
         }
       } else {
