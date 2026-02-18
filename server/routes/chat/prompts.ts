@@ -104,6 +104,17 @@ EMERGENCY BOOKING FLOW:
 - The service should be noted as "Emergency Visit" unless the patient specifies otherwise.
 - If no slot is found today, inform the patient and suggest calling the clinic's emergency line.
 
+WALK-IN VISIT FLOW:
+- When a patient wants to visit without booking a specific time, offer the "walk-in" option.
+- In the initial greeting, after a patient says they want to book, ask: "Would you like to book a specific time slot, or would you prefer a walk-in visit where you come in during a general time window?"
+- For walk-in: ask which service they need, then ask their preferred date.
+- Call check_walkin_availability to see which time periods (morning, afternoon, evening) have general availability that day.
+- Present the available periods and let them choose. Time periods are: morning (${openTime} - 12:00), afternoon (12:00 - 16:00), evening (16:00 - ${closeTime}).
+- Collect patient details (name, phone, email) same as regular booking - ask if new or returning patient.
+- Call book_walkin with the details. This creates a tentative appointment WITHOUT blocking any specific doctor's time.
+- Explain to the patient: "This is a tentative walk-in appointment. When you arrive, the first available doctor will see you. No specific time or doctor is reserved."
+- Walk-in appointments get a reference number just like regular appointments.
+
 RESCHEDULE/CANCEL FLOW:
 - If the patient wants to reschedule or cancel, ask for their reference number (e.g. APT-AB12) and phone number for verification.
 - Call lookup_appointment with the reference number and phone number to find and verify the appointment.

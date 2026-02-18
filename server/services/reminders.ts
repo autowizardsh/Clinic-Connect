@@ -69,7 +69,7 @@ async function processReminders(): Promise<void> {
           const sent = await sendAppointmentReminderEmail({
             patientEmail,
             patientName: reminder.patient.name,
-            doctorName: reminder.doctor.name,
+            doctorName: reminder.doctor?.name || (reminder.appointment.appointmentType === "walk-in" ? "Walk-in (any available)" : "Doctor"),
             date: new Date(reminder.appointment.date),
             service: reminder.appointment.service,
             referenceNumber: reminder.appointment.referenceNumber || "N/A",
@@ -106,7 +106,8 @@ async function processReminders(): Promise<void> {
               timeLabel = `in ${reminder.offsetMinutes} minutes`;
             }
 
-            const message = `Reminder: Your dental appointment is ${timeLabel}.\n\nDate: ${dateStr}\nTime: ${timeStr}\nDoctor: Dr. ${reminder.doctor.name}\nService: ${reminder.appointment.service}\nRef: ${reminder.appointment.referenceNumber || "N/A"}\n\nTo reschedule or cancel, reply with your reference number.`;
+            const doctorLabel = reminder.doctor?.name ? `Dr. ${reminder.doctor.name}` : (reminder.appointment.appointmentType === "walk-in" ? "Any available doctor (walk-in)" : "Doctor");
+            const message = `Reminder: Your dental appointment is ${timeLabel}.\n\nDate: ${dateStr}\nTime: ${timeStr}\nDoctor: ${doctorLabel}\nService: ${reminder.appointment.service}\nRef: ${reminder.appointment.referenceNumber || "N/A"}\n\nTo reschedule or cancel, reply with your reference number.`;
 
             await sendTextMessage(phone, message);
             await storage.markReminderSent(reminder.id);

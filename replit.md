@@ -14,6 +14,7 @@ Key capabilities:
 - Session-based authentication with role-based access control (admin/doctor)
 - OpenAI integration for conversational AI features
 - Emergency booking: finds nearest available slot TODAY across all doctors
+- Walk-in appointments: tentative bookings without specific time/doctor assignment
 - Automated appointment reminders via email and WhatsApp
 
 ### Appointment Reference Numbers
@@ -30,6 +31,17 @@ Key capabilities:
 - Quick reply buttons shown: "New patient" / "Returning patient" (EN) or "Nieuwe patient" / "Terugkerende patient" (NL)
 - If returning patient email not found, falls back to new patient flow
 - Storage method: `getPatientByEmail(email)` in `server/storage.ts`
+
+### Walk-in Appointments
+- Patients can choose walk-in visits instead of booking specific time slots
+- Walk-in appointments use `appointmentType` = "walk-in" and store `timePeriod` (morning/afternoon/evening)
+- `doctorId` is null for walk-in appointments - patient is seen by first available doctor
+- Walk-in appointments do NOT block any doctor's specific time slot
+- AI tools: `check_walkin_availability` (checks open time periods) and `book_walkin` (creates tentative appointment)
+- Admin/doctor dashboards show walk-in badge and time period instead of exact time
+- Walk-in appointments cannot be rescheduled (must cancel and rebook)
+- Voice agent endpoints: POST `/api/voice/walkin-availability`, POST `/api/voice/walkin-book`
+- Confirmation emails sent with "Any available doctor (walk-in)" as doctor name
 
 ## User Preferences
 

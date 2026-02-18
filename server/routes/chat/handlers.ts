@@ -277,7 +277,7 @@ export function registerChatRoutes(app: Express) {
               referenceNumber: appointment.referenceNumber,
               appointmentId: appointment.id,
               doctorId: appointment.doctorId,
-              doctorName: appointment.doctor.name,
+              doctorName: appointment.doctor?.name || "Walk-in (any available doctor)",
               patientName: appointment.patient.name,
               service: appointment.service,
               date: appointmentDate.toISOString().split("T")[0],
@@ -333,7 +333,7 @@ export function registerChatRoutes(app: Express) {
           } else {
             await storage.updateAppointment(appointment.id, { status: "cancelled" });
             
-            if (appointment.googleEventId) {
+            if (appointment.googleEventId && appointment.doctorId) {
               try {
                 const doctor = await storage.getDoctorById(appointment.doctorId);
                 if (doctor?.googleRefreshToken) {
@@ -349,7 +349,7 @@ export function registerChatRoutes(app: Express) {
             }
             
             if (appointment.patient.email) {
-              const doctor = await storage.getDoctorById(appointment.doctorId);
+              const doctor = appointment.doctorId ? await storage.getDoctorById(appointment.doctorId) : null;
               sendAppointmentCancelledEmail({
                 patientEmail: appointment.patient.email,
                 patientName: appointment.patient.name,
@@ -414,7 +414,7 @@ export function registerChatRoutes(app: Express) {
               rescheduleResult = JSON.stringify({ success: false, error: "Cannot reschedule to a past date/time." });
             } else {
               const newDateTime = clinicTimeToUTC(rescheduleData.newDate, rescheduleData.newTime, clinicTimezone);
-              const existingAppointments = await storage.getAppointmentsByDoctorId(appointment.doctorId);
+              const existingAppointments = appointment.doctorId ? await storage.getAppointmentsByDoctorId(appointment.doctorId) : [];
               const duration = appointment.duration || 30;
               const conflicting = existingAppointments.find((apt) => {
                 if (apt.id === appointment.id || apt.status === "cancelled") return false;
@@ -431,7 +431,7 @@ export function registerChatRoutes(app: Express) {
                 const oldDate = new Date(appointment.date);
                 await storage.updateAppointment(appointment.id, { date: newDateTime });
                 
-                if (appointment.googleEventId) {
+                if (appointment.googleEventId && appointment.doctorId) {
                   try {
                     const doctor = await storage.getDoctorById(appointment.doctorId);
                     if (doctor?.googleRefreshToken) {
@@ -461,7 +461,7 @@ export function registerChatRoutes(app: Express) {
                 }
                 
                 if (appointment.patient.email) {
-                  const reschDoctor = await storage.getDoctorById(appointment.doctorId);
+                  const reschDoctor = appointment.doctorId ? await storage.getDoctorById(appointment.doctorId) : null;
                   sendAppointmentRescheduledEmail({
                     patientEmail: appointment.patient.email,
                     patientName: appointment.patient.name,
