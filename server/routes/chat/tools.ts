@@ -186,69 +186,6 @@ export const lookupPatientByEmailFunction = {
   },
 };
 
-export const checkWalkinAvailabilityFunction = {
-  type: "function" as const,
-  function: {
-    name: "check_walkin_availability",
-    description:
-      "Check general walk-in availability for a specific date. Returns which time periods (morning, afternoon, evening) have open slots across all doctors. Use this when a patient wants a walk-in visit without booking a specific time. This does NOT block any doctor's time.",
-    parameters: {
-      type: "object",
-      properties: {
-        date: {
-          type: "string",
-          description: "Date to check in YYYY-MM-DD format",
-        },
-      },
-      required: ["date"],
-    },
-  },
-};
-
-export const bookWalkinFunction = {
-  type: "function" as const,
-  function: {
-    name: "book_walkin",
-    description:
-      "Create a tentative walk-in appointment. This does NOT block any doctor's time slot. The patient walks in during the suggested time period and is seen by whoever is available. Collect: patient name, phone, email, service, preferred date, and time period (morning/afternoon/evening). NEVER use placeholder values.",
-    parameters: {
-      type: "object",
-      properties: {
-        patientName: {
-          type: "string",
-          description: "Patient's real full name",
-        },
-        patientPhone: {
-          type: "string",
-          description: "Patient's real phone number",
-        },
-        patientEmail: {
-          type: "string",
-          description: "Patient's real email address",
-        },
-        service: {
-          type: "string",
-          description: "The dental service requested",
-        },
-        date: {
-          type: "string",
-          description: "Preferred walk-in date in YYYY-MM-DD format",
-        },
-        timePeriod: {
-          type: "string",
-          enum: ["morning", "afternoon", "evening"],
-          description: "Preferred time period: morning (opening - 12:00), afternoon (12:00 - 16:00), or evening (16:00 - closing)",
-        },
-        notes: {
-          type: "string",
-          description: "Any additional notes",
-        },
-      },
-      required: ["patientName", "patientPhone", "patientEmail", "service", "date", "timePeriod"],
-    },
-  },
-};
-
 export const checkAvailabilityFunctionSimple = {
   type: "function" as const,
   function: {

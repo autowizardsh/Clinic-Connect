@@ -57,13 +57,11 @@ export type InsertPatient = z.infer<typeof insertPatientSchema>;
 export const appointments = pgTable("appointments", {
   id: serial("id").primaryKey(),
   referenceNumber: varchar("reference_number", { length: 10 }).unique(),
-  doctorId: integer("doctor_id").references(() => doctors.id),
+  doctorId: integer("doctor_id").notNull().references(() => doctors.id),
   patientId: integer("patient_id").notNull().references(() => patients.id),
   date: timestamp("date").notNull(),
   duration: integer("duration").notNull().default(30), // in minutes
   status: text("status").notNull().default("scheduled"), // scheduled, completed, cancelled
-  appointmentType: text("appointment_type").notNull().default("scheduled"), // scheduled, walk-in
-  timePeriod: text("time_period"), // morning, afternoon, evening (only for walk-in)
   service: text("service").notNull(),
   notes: text("notes"),
   source: text("source").notNull().default("chat"), // chat, voice, manual

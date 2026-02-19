@@ -14,7 +14,6 @@ Key capabilities:
 - Session-based authentication with role-based access control (admin/doctor)
 - OpenAI integration for conversational AI features
 - Emergency booking: finds nearest available slot TODAY across all doctors
-- Walk-in appointments: tentative bookings without specific time/doctor assignment
 - Automated appointment reminders via email and WhatsApp
 
 ### Appointment Reference Numbers
@@ -30,18 +29,7 @@ Key capabilities:
 - **New patient**: Asks for full details (name, phone, email) as before
 - Quick reply buttons shown: "New patient" / "Returning patient" (EN) or "Nieuwe patient" / "Terugkerende patient" (NL)
 - If returning patient email not found, falls back to new patient flow
-- **Patient deduplication**: `findOrCreatePatient()` in `server/storage.ts` looks up by email first, then phone before creating new records. Updates existing patient info (name, phone, email) if changed. Used across all booking channels (chat, WhatsApp, voice agent, walk-in).
-
-### Walk-in Appointments
-- Patients can choose walk-in visits instead of booking specific time slots
-- Walk-in appointments use `appointmentType` = "walk-in" and store `timePeriod` (morning/afternoon/evening)
-- `doctorId` is null for walk-in appointments - patient is seen by first available doctor
-- Walk-in appointments do NOT block any doctor's specific time slot
-- AI tools: `check_walkin_availability` (checks open time periods) and `book_walkin` (creates tentative appointment)
-- Admin/doctor dashboards show walk-in badge and time period instead of exact time
-- Walk-in appointments cannot be rescheduled (must cancel and rebook)
-- Voice agent endpoints: POST `/api/voice/walkin-availability`, POST `/api/voice/walkin-book`
-- Confirmation emails sent with "Any available doctor (walk-in)" as doctor name
+- Storage method: `getPatientByEmail(email)` in `server/storage.ts`
 
 ## User Preferences
 
@@ -153,14 +141,8 @@ shared/               # Shared types and database schema
 - **connect-pg-simple**: Session storage in PostgreSQL
 
 ### AI Services
-- **OpenAI-compatible API**: Chat completions with automatic fallback support
-- **Primary provider env vars**: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `CHAT_AI_MODEL` (default: gpt-4o-mini)
-  - Falls back to Replit's `AI_INTEGRATIONS_OPENAI_API_KEY` / `AI_INTEGRATIONS_OPENAI_BASE_URL` if not set
-- **Fallback provider env vars** (optional): `FALLBACK_OPENAI_API_KEY`, `FALLBACK_OPENAI_BASE_URL`, `FALLBACK_AI_MODEL`
-  - Auto-activates on rate limit, quota exceeded, or billing errors from primary
-  - Works with any OpenAI-compatible API (Gemini, Groq, Together, OpenRouter, etc.)
-- **Service module**: `server/services/openai.ts` - exports `chatCompletion()` wrapper and `getModel()`
-- Speech-to-text and text-to-speech still use Replit AI integrations client directly
+- **OpenAI API**: Chat completions, speech-to-text, text-to-speech
+- Environment variables: `AI_INTEGRATIONS_OPENAI_API_KEY`, `AI_INTEGRATIONS_OPENAI_BASE_URL`
 
 ### Third-Party Integrations
 - **Google Calendar**: Optional sync for doctor schedules (fields exist for OAuth tokens)

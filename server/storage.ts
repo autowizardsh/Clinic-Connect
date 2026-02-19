@@ -54,17 +54,16 @@ export interface IStorage {
   getPatientByPhone(phone: string): Promise<Patient | undefined>;
   getPatientByEmail(email: string): Promise<Patient | undefined>;
   createPatient(patient: InsertPatient): Promise<Patient>;
-  findOrCreatePatient(data: { name: string; phone: string; email?: string | null; notes?: string | null }): Promise<Patient>;
   updatePatient(id: number, patient: Partial<InsertPatient>): Promise<Patient | undefined>;
   deletePatient(id: number): Promise<void>;
 
   // Appointments
-  getAppointments(): Promise<(Appointment & { doctor: Doctor | null; patient: Patient })[]>;
+  getAppointments(): Promise<(Appointment & { doctor: Doctor; patient: Patient })[]>;
   getAppointmentById(id: number): Promise<Appointment | undefined>;
-  getAppointmentByReferenceNumber(referenceNumber: string): Promise<(Appointment & { doctor: Doctor | null; patient: Patient }) | undefined>;
+  getAppointmentByReferenceNumber(referenceNumber: string): Promise<(Appointment & { doctor: Doctor; patient: Patient }) | undefined>;
   getAppointmentsByDoctorId(doctorId: number): Promise<(Appointment & { patient: Patient })[]>;
   getAppointmentsByPatientId(patientId: number): Promise<Appointment[]>;
-  getAppointmentsForDate(date: Date): Promise<(Appointment & { doctor: Doctor | null; patient: Patient })[]>;
+  getAppointmentsForDate(date: Date): Promise<(Appointment & { doctor: Doctor; patient: Patient })[]>;
   createAppointment(appointment: InsertAppointment): Promise<Appointment>;
   updateAppointment(id: number, appointment: Partial<InsertAppointment>): Promise<Appointment | undefined>;
   deleteAppointment(id: number): Promise<void>;
@@ -97,7 +96,7 @@ export interface IStorage {
 
   // Appointment Reminders
   createAppointmentReminder(reminder: InsertAppointmentReminder): Promise<AppointmentReminder>;
-  getPendingReminders(): Promise<(AppointmentReminder & { appointment: Appointment; doctor: Doctor | null; patient: Patient })[]>;
+  getPendingReminders(): Promise<(AppointmentReminder & { appointment: Appointment; doctor: Doctor; patient: Patient })[]>;
   markReminderSent(id: number): Promise<void>;
   markReminderFailed(id: number, errorMessage: string): Promise<void>;
   getRemindersForAppointment(appointmentId: number): Promise<AppointmentReminder[]>;
@@ -205,45 +204,6 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async findOrCreatePatient(data: { name: string; phone: string; email?: string | null; notes?: string | null }): Promise<Patient> {
-    const phone = (data.phone || "").trim();
-    const email = (data.email || "").trim().toLowerCase();
-
-    let patient: Patient | undefined;
-
-    if (email) {
-      patient = await this.getPatientByEmail(email);
-    }
-    if (!patient && phone) {
-      patient = await this.getPatientByPhone(phone);
-    }
-
-    if (patient) {
-      const updates: Partial<InsertPatient> = {};
-      if (data.name && data.name.trim().length > 1 && data.name.toLowerCase() !== patient.name.toLowerCase()) {
-        updates.name = data.name;
-      }
-      if (phone && phone.length >= 6 && phone !== patient.phone) {
-        updates.phone = phone;
-      }
-      if (email && email !== (patient.email || "").toLowerCase()) {
-        updates.email = data.email!;
-      }
-      if (Object.keys(updates).length > 0) {
-        const updated = await this.updatePatient(patient.id, updates);
-        if (updated) return updated;
-      }
-      return patient;
-    }
-
-    return this.createPatient({
-      name: data.name,
-      phone: phone,
-      email: data.email || null,
-      notes: data.notes || null,
-    });
-  }
-
   async updatePatient(id: number, patient: Partial<InsertPatient>): Promise<Patient | undefined> {
     const [result] = await db.update(patients).set(patient).where(eq(patients.id, id)).returning();
     return result;
@@ -257,7 +217,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Appointments
-  async getAppointments(): Promise<(Appointment & { doctor: Doctor | null; patient: Patient })[]> {
+  async getAppointments(): Promise<(Appointment & { doctor: Doctor; patient: Patient })[]> {
     const result = await db
       .select()
       .from(appointments)
@@ -267,7 +227,7 @@ export class DatabaseStorage implements IStorage {
 
     return result.map((row) => ({
       ...row.appointments,
-      doctor: row.doctors || null,
+      doctor: row.doctors!,
       patient: row.patients!,
     }));
   }
@@ -277,7 +237,7 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getAppointmentByReferenceNumber(referenceNumber: string): Promise<(Appointment & { doctor: Doctor | null; patient: Patient }) | undefined> {
+  async getAppointmentByReferenceNumber(referenceNumber: string): Promise<(Appointment & { doctor: Doctor; patient: Patient }) | undefined> {
     const result = await db
       .select()
       .from(appointments)
@@ -288,7 +248,7 @@ export class DatabaseStorage implements IStorage {
     const row = result[0];
     return {
       ...row.appointments,
-      doctor: row.doctors || null,
+      doctor: row.doctors!,
       patient: row.patients!,
     };
   }
@@ -315,7 +275,7 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(appointments.date));
   }
 
-  async getAppointmentsForDate(date: Date): Promise<(Appointment & { doctor: Doctor | null; patient: Patient })[]> {
+  async getAppointmentsForDate(date: Date): Promise<(Appointment & { doctor: Doctor; patient: Patient })[]> {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
@@ -331,7 +291,7 @@ export class DatabaseStorage implements IStorage {
 
     return result.map((row) => ({
       ...row.appointments,
-      doctor: row.doctors || null,
+      doctor: row.doctors!,
       patient: row.patients!,
     }));
   }
@@ -590,13 +550,13 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getPendingReminders(): Promise<(AppointmentReminder & { appointment: Appointment; doctor: Doctor | null; patient: Patient })[]> {
+  async getPendingReminders(): Promise<(AppointmentReminder & { appointment: Appointment; doctor: Doctor; patient: Patient })[]> {
     const now = new Date();
     const result = await db
       .select()
       .from(appointmentReminders)
       .innerJoin(appointments, eq(appointmentReminders.appointmentId, appointments.id))
-      .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
+      .innerJoin(doctors, eq(appointments.doctorId, doctors.id))
       .innerJoin(patients, eq(appointments.patientId, patients.id))
       .where(
         and(
@@ -615,8 +575,8 @@ export class DatabaseStorage implements IStorage {
       .map((row) => ({
         ...row.appointment_reminders,
         appointment: row.appointments,
-        doctor: row.doctors || null,
-        patient: row.patients!,
+        doctor: row.doctors,
+        patient: row.patients,
       }));
   }
 

@@ -51,32 +51,6 @@ export async function determineQuickReplies(
         ];
   }
 
-  const isAskingWalkinOrRegular = (
-    (containsAny(lowerResponse, ["walk-in", "walk in", "inloopafspraak", "inloop", "inloopbezoek"]) &&
-     containsAny(lowerResponse, ["specific time", "specific slot", "particular dentist", "particular doctor", "regular", "scheduled", "reguliere", "specifieke", "ingeplande"])) ||
-    (containsAny(lowerResponse, ["walk-in", "walk in", "general time window", "time window", "flexible time"]) &&
-     containsAny(lowerResponse, ["specific", "particular", "time slot", "exact time"]) &&
-     lowerResponse.includes("?")) ||
-    (containsAny(lowerLastQ, ["walk-in", "walk in", "time window", "general time", "inloop", "flexible"]) &&
-     containsAny(lowerLastQ, ["specific", "particular", "exact", "specifieke"]) &&
-     lowerLastQ.includes("?")) ||
-    (containsAny(lowerResponse, ["specific time", "exact time", "specifieke tijd"]) &&
-     containsAny(lowerResponse, ["general time", "time window", "morning or afternoon", "ochtend of middag", "flexible"]) &&
-     lowerResponse.includes("?"))
-  );
-
-  if (isAskingWalkinOrRegular) {
-    return language === "nl"
-      ? [
-          { label: "Specifieke tijd boeken", value: "Ik wil een specifieke tijd boeken bij een tandarts" },
-          { label: "Inloopbezoek", value: "Ik wil graag een inloopbezoek (walk-in)" },
-        ]
-      : [
-          { label: "Book a specific time", value: "I would like to book a specific time with a dentist" },
-          { label: "Walk-in visit", value: "I would like a walk-in visit" },
-        ];
-  }
-
   const isAskingContactInfo = containsAny(lowerLastQ, [
     "your name", "full name", "your full name", "first and last name",
     "phone number", "your number", "contact number", "mobile number", "telephone",
@@ -116,12 +90,8 @@ export async function determineQuickReplies(
     "is booked", "appointment confirmed", "booking confirmed", "booking is confirmed",
     "successfully scheduled", "has been scheduled", "appointment scheduled",
     "is geboekt", "is bevestigd", "succesvol geboekt", "afspraak bevestigd",
-    "has been registered", "successfully registered", "is registered",
-    "walk-in appointment registered", "walk-in afspraak is geregistreerd",
-    "is geregistreerd",
   ]) && containsAny(lowerResponse, [
     "booked", "confirmed", "scheduled", "geboekt", "bevestigd", "reference", "apt-",
-    "registered", "geregistreerd",
   ]);
 
   if (isBookingComplete) {
@@ -233,30 +203,6 @@ export async function determineQuickReplies(
   const inRescheduleFlow = containsAny(recentUserText, ["reschedule", "verzetten", "verplaats"]);
   if (inCancelFlow || inRescheduleFlow) {
     return [];
-  }
-
-  const isShowingWalkinPeriods = containsAny(lowerResponse, ["walk-in", "walk in", "inloop"]) &&
-    containsAny(lowerResponse, ["morning", "afternoon", "evening", "ochtend", "middag", "avond"]) &&
-    (lowerResponse.includes("?") || containsAny(lowerResponse, ["prefer", "choose", "select", "which", "kies", "welke", "voorkeur"]));
-
-  if (isShowingWalkinPeriods) {
-    const periods: { label: string; value: string }[] = [];
-    if (containsAny(lowerResponse, ["morning", "ochtend"])) {
-      periods.push(language === "nl"
-        ? { label: "Ochtend", value: "Ik kies voor de ochtend" }
-        : { label: "Morning", value: "I prefer the morning" });
-    }
-    if (containsAny(lowerResponse, ["afternoon", "middag"])) {
-      periods.push(language === "nl"
-        ? { label: "Middag", value: "Ik kies voor de middag" }
-        : { label: "Afternoon", value: "I prefer the afternoon" });
-    }
-    if (containsAny(lowerResponse, ["evening", "avond"])) {
-      periods.push(language === "nl"
-        ? { label: "Avond", value: "Ik kies voor de avond" }
-        : { label: "Evening", value: "I prefer the evening" });
-    }
-    if (periods.length > 0) return periods;
   }
 
   const timeSlots = extractTimeSlotsFromResponse(aiResponse);

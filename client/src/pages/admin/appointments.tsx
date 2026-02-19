@@ -16,7 +16,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useClinicTimezone } from "@/hooks/use-clinic-timezone";
 import type { Appointment, Doctor, Patient, InsertAppointment } from "@shared/schema";
 
-type AppointmentWithRelations = Appointment & { doctor: Doctor | null; patient: Patient };
+type AppointmentWithRelations = Appointment & { doctor: Doctor; patient: Patient };
 
 export default function AdminAppointments() {
   const [isOpen, setIsOpen] = useState(false);
@@ -446,14 +446,9 @@ function AppointmentCard({
           </div>
         </div>
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <div>
-              <p className="font-semibold">{appointment.patient?.name}</p>
-              <p className="text-sm text-muted-foreground">{appointment.service}</p>
-            </div>
-            {appointment.appointmentType === "walk-in" && (
-              <Badge variant="secondary" data-testid={`badge-walkin-${appointment.id}`}>Walk-in</Badge>
-            )}
+          <div>
+            <p className="font-semibold">{appointment.patient?.name}</p>
+            <p className="text-sm text-muted-foreground">{appointment.service}</p>
           </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-1">
@@ -462,14 +457,11 @@ function AppointmentCard({
             </div>
             <div className="flex items-center gap-1">
               <Clock className="h-4 w-4" />
-              {appointment.appointmentType === "walk-in" && appointment.timePeriod
-                ? appointment.timePeriod.charAt(0).toUpperCase() + appointment.timePeriod.slice(1)
-                : tz.formatTime(appointment.date)}
+              {tz.formatTime(appointment.date)}
             </div>
           </div>
           <p className="text-sm">
-            <span className="text-muted-foreground">Doctor:</span>{" "}
-            {appointment.doctor ? `Dr. ${appointment.doctor.name}` : "Any available doctor"}
+            <span className="text-muted-foreground">Doctor:</span> Dr. {appointment.doctor?.name}
           </p>
         </div>
         {appointment.status === "scheduled" && (

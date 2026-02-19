@@ -196,10 +196,15 @@ export function registerVoiceAgentRoutes(app: Express) {
         });
       }
 
-      let patient = await storage.findOrCreatePatient({
-        name: patientName, phone: patientPhone,
-        email: patientEmail || null, notes: `Booked via voice agent on ${new Date().toLocaleDateString()}`,
-      });
+      let patient = await storage.getPatientByPhone(patientPhone);
+      if (!patient) {
+        patient = await storage.createPatient({
+          name: patientName,
+          phone: patientPhone,
+          email: patientEmail || null,
+          notes: `Booked via voice agent on ${new Date().toLocaleDateString()}`,
+        });
+      }
 
       const appointment = await storage.createAppointment({
         patientId: patient.id,
@@ -282,20 +287,18 @@ export function registerVoiceAgentRoutes(app: Express) {
         return res.status(403).json({ error: "Phone number does not match the appointment record" });
       }
 
-      const doctor = appointment.doctorId ? await storage.getDoctorById(appointment.doctorId) : null;
+      const doctor = await storage.getDoctorById(appointment.doctorId);
 
       res.json({
         found: true,
         referenceNumber: refNum,
         patientName: appointment.patient.name,
-        doctorName: doctor?.name || (appointment.appointmentType === "walk-in" ? "Walk-in (any available)" : "Unknown"),
+        doctorName: doctor?.name || "Unknown",
         date: new Date(appointment.date).toISOString().split("T")[0],
         time: new Date(appointment.date).toTimeString().slice(0, 5),
         service: appointment.service,
         status: appointment.status,
         duration: appointment.duration,
-        appointmentType: appointment.appointmentType,
-        timePeriod: appointment.timePeriod,
       });
     } catch (error) {
       console.error("Voice API - Error looking up appointment:", error);
@@ -331,7 +334,7 @@ export function registerVoiceAgentRoutes(app: Express) {
 
       await storage.updateAppointment(appointment.id, { status: "cancelled" });
 
-      if (appointment.googleEventId && appointment.doctorId) {
+      if (appointment.googleEventId) {
         try {
           const doctor = await storage.getDoctorById(appointment.doctorId);
           if (doctor?.googleRefreshToken) {
@@ -347,11 +350,11 @@ export function registerVoiceAgentRoutes(app: Express) {
       }
 
       if (appointment.patient.email) {
-        const doctor = appointment.doctorId ? await storage.getDoctorById(appointment.doctorId) : null;
+        const doctor = await storage.getDoctorById(appointment.doctorId);
         sendAppointmentCancelledEmail({
           patientEmail: appointment.patient.email,
           patientName: appointment.patient.name,
-          doctorName: doctor?.name || (appointment.appointmentType === "walk-in" ? "Walk-in" : "Doctor"),
+          doctorName: doctor?.name || "Doctor",
           date: new Date(appointment.date),
           service: appointment.service,
           referenceNumber: refNum,
@@ -430,45 +433,39 @@ export function registerVoiceAgentRoutes(app: Express) {
         return res.status(400).json({ error: "Selected day is not a working day" });
       }
 
-      if (appointment.appointmentType === "walk-in") {
-        return res.status(400).json({ error: "Walk-in appointments cannot be rescheduled. Please cancel and create a new booking." });
-      }
-
-      if (appointment.doctorId) {
-        const doctorUnavailability = await storage.getDoctorAvailabilityForDate(appointment.doctorId, newDate);
-        for (const block of doctorUnavailability) {
-          if (!block.isAvailable) {
-            const [bsH, bsM] = block.startTime.split(":").map(Number);
-            const [beH, beM] = block.endTime.split(":").map(Number);
-            const blockStart = bsH * 60 + bsM;
-            const blockEnd = beH * 60 + beM;
-            if (reqMin < blockEnd && reqMin + duration > blockStart) {
-              return res.status(400).json({
-                error: `Doctor is not available from ${block.startTime} to ${block.endTime}${block.reason ? ` (${block.reason})` : ""}`,
-              });
-            }
+      const doctorUnavailability = await storage.getDoctorAvailabilityForDate(appointment.doctorId, newDate);
+      for (const block of doctorUnavailability) {
+        if (!block.isAvailable) {
+          const [bsH, bsM] = block.startTime.split(":").map(Number);
+          const [beH, beM] = block.endTime.split(":").map(Number);
+          const blockStart = bsH * 60 + bsM;
+          const blockEnd = beH * 60 + beM;
+          if (reqMin < blockEnd && reqMin + duration > blockStart) {
+            return res.status(400).json({
+              error: `Doctor is not available from ${block.startTime} to ${block.endTime}${block.reason ? ` (${block.reason})` : ""}`,
+            });
           }
         }
+      }
 
-        const existingAppointments = await storage.getAppointmentsByDoctorId(appointment.doctorId);
-        const conflicting = existingAppointments.find((apt) => {
-          if (apt.id === appointment.id || apt.status === "cancelled") return false;
-          const aptStart = new Date(apt.date).getTime();
-          const aptEnd = aptStart + apt.duration * 60 * 1000;
-          const newStart = newDateTime.getTime();
-          const newEnd = newStart + duration * 60 * 1000;
-          return newStart < aptEnd && newEnd > aptStart;
-        });
+      const existingAppointments = await storage.getAppointmentsByDoctorId(appointment.doctorId);
+      const conflicting = existingAppointments.find((apt) => {
+        if (apt.id === appointment.id || apt.status === "cancelled") return false;
+        const aptStart = new Date(apt.date).getTime();
+        const aptEnd = aptStart + apt.duration * 60 * 1000;
+        const newStart = newDateTime.getTime();
+        const newEnd = newStart + duration * 60 * 1000;
+        return newStart < aptEnd && newEnd > aptStart;
+      });
 
-        if (conflicting) {
-          return res.status(409).json({ error: "The new time slot conflicts with another appointment" });
-        }
+      if (conflicting) {
+        return res.status(409).json({ error: "The new time slot conflicts with another appointment" });
       }
 
       const oldDate = new Date(appointment.date);
       await storage.updateAppointment(appointment.id, { date: newDateTime });
 
-      const doctor = appointment.doctorId ? await storage.getDoctorById(appointment.doctorId) : null;
+      const doctor = await storage.getDoctorById(appointment.doctorId);
 
       if (appointment.googleEventId && doctor?.googleRefreshToken) {
         try {
@@ -525,149 +522,6 @@ export function registerVoiceAgentRoutes(app: Express) {
     } catch (error) {
       console.error("Voice API - Error rescheduling appointment:", error);
       res.status(500).json({ error: "Failed to reschedule appointment" });
-    }
-  });
-
-  app.post("/api/voice/walkin-availability", authMiddleware, async (req, res) => {
-    try {
-      const { date } = req.body;
-
-      if (!date) {
-        return res.status(400).json({ error: "date (YYYY-MM-DD) is required" });
-      }
-
-      const settings = await storage.getClinicSettings();
-      const clinicTimezone = settings?.timezone || "Europe/Amsterdam";
-      const clinicNow = getNowInTimezone(clinicTimezone);
-
-      if (date < clinicNow.dateStr) {
-        return res.status(400).json({ error: "Cannot check availability for past dates" });
-      }
-
-      const openTime = settings?.openTime || "09:00";
-      const closeTime = settings?.closeTime || "17:00";
-      const [openH] = openTime.split(":").map(Number);
-      const [closeH] = closeTime.split(":").map(Number);
-
-      const periods: { name: string; available: boolean; description: string }[] = [];
-      if (openH < 12) periods.push({ name: "morning", available: true, description: `${openTime.slice(0, 5)} - 12:00` });
-      if (openH < 16 && closeH > 12) periods.push({ name: "afternoon", available: true, description: `12:00 - ${Math.min(closeH, 16)}:00` });
-      if (closeH > 16) periods.push({ name: "evening", available: true, description: `16:00 - ${closeTime.slice(0, 5)}` });
-
-      if (date === clinicNow.dateStr) {
-        const currentHour = clinicNow.hours;
-        for (const period of periods) {
-          const periodEndHour = period.name === "morning" ? 12 : period.name === "afternoon" ? 16 : closeH;
-          if (currentHour >= periodEndHour) period.available = false;
-        }
-      }
-
-      const dayOfWeek = new Date(date + "T12:00:00").getDay();
-      const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
-      if (!workingDays.includes(dayOfWeek)) {
-        for (const period of periods) period.available = false;
-      }
-
-      res.json({
-        date,
-        periods: periods.filter(p => p.available),
-        clinicOpen: openTime.slice(0, 5),
-        clinicClose: closeTime.slice(0, 5),
-        isWorkingDay: workingDays.includes(dayOfWeek),
-      });
-    } catch (error) {
-      console.error("Voice API - Error checking walk-in availability:", error);
-      res.status(500).json({ error: "Failed to check walk-in availability" });
-    }
-  });
-
-  app.post("/api/voice/walkin-book", authMiddleware, async (req, res) => {
-    try {
-      const { patientName, patientPhone, patientEmail, service, date, timePeriod, notes } = req.body;
-
-      if (!patientName || !patientPhone || !patientEmail || !service || !date || !timePeriod) {
-        return res.status(400).json({
-          error: "Missing required fields",
-          required: ["patientName", "patientPhone", "patientEmail", "service", "date", "timePeriod"],
-          optional: ["notes"],
-          timePeriodOptions: ["morning", "afternoon", "evening"],
-        });
-      }
-
-      if (!["morning", "afternoon", "evening"].includes(timePeriod)) {
-        return res.status(400).json({ error: "timePeriod must be 'morning', 'afternoon', or 'evening'" });
-      }
-
-      const trimmedName = (patientName || "").trim().toLowerCase();
-      if (trimmedName.length < 2) {
-        return res.status(400).json({ error: "Patient name is too short" });
-      }
-
-      const settings = await storage.getClinicSettings();
-      const clinicTimezone = settings?.timezone || "Europe/Amsterdam";
-      const clinicNow = getNowInTimezone(clinicTimezone);
-
-      if (date < clinicNow.dateStr) {
-        return res.status(400).json({ error: "Cannot book walk-in for past dates" });
-      }
-
-      const openTime = settings?.openTime || "09:00";
-      const timePeriodMap: Record<string, string> = {
-        morning: openTime.slice(0, 5),
-        afternoon: "12:00",
-        evening: "16:00",
-      };
-      const representativeTime = timePeriodMap[timePeriod] || openTime.slice(0, 5);
-      const appointmentDateTime = clinicTimeToUTC(date, representativeTime, clinicTimezone);
-
-      let patient = await storage.findOrCreatePatient({
-        name: patientName, phone: patientPhone,
-        email: patientEmail || null, notes: `Walk-in booked via voice on ${new Date().toLocaleDateString()}`,
-      });
-
-      const appointment = await storage.createAppointment({
-        patientId: patient.id,
-        doctorId: null,
-        date: appointmentDateTime,
-        duration: settings?.appointmentDuration || 30,
-        status: "scheduled",
-        service,
-        notes: notes || `Walk-in - ${timePeriod}`,
-        source: "voice",
-        appointmentType: "walk-in",
-        timePeriod,
-      });
-
-      const patientEmailAddr = patientEmail || patient.email;
-      if (patientEmailAddr) {
-        sendAppointmentConfirmationEmail({
-          patientEmail: patientEmailAddr,
-          patientName,
-          doctorName: "Any available doctor (walk-in)",
-          date: appointmentDateTime,
-          service,
-          duration: settings?.appointmentDuration || 30,
-          referenceNumber: appointment.referenceNumber!,
-        }).catch((e) => console.error("Voice API - Failed to send walk-in confirmation email:", e));
-      }
-
-      scheduleRemindersForAppointment(appointment.id).catch((e) =>
-        console.error("Voice API - Failed to schedule walk-in reminders:", e)
-      );
-
-      res.json({
-        success: true,
-        message: `Walk-in appointment registered for ${date} (${timePeriod})`,
-        referenceNumber: appointment.referenceNumber,
-        appointmentId: appointment.id,
-        date,
-        timePeriod,
-        service,
-        appointmentType: "walk-in",
-      });
-    } catch (error) {
-      console.error("Voice API - Error booking walk-in:", error);
-      res.status(500).json({ error: "Failed to book walk-in appointment" });
     }
   });
 }

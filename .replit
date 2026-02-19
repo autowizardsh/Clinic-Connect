@@ -48,6 +48,4 @@ APP_BASE_URL = "https://clinic-connect--autowizard01.replit.app"
 
 [userenv.shared]
 WHATSAPP_PHONE_NUMBER_ID = "871803432691653"
-CHAT_AI_MODEL = "gpt-5-mini"
-FALLBACK_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-FALLBACK_AI_MODEL = "gemini-2.5-flash"
+CHAT_AI_MODEL = "gpt-4o-mini"

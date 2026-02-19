@@ -1,5 +1,5 @@
 import { storage } from "../../storage";
-import { chatCompletion, getModel } from "../../services/openai";
+import { openai } from "../../services/openai";
 import { createCalendarEvent, deleteCalendarEvent } from "../../google-calendar";
 import { sendAppointmentConfirmationEmail, sendAppointmentCancelledEmail, sendAppointmentRescheduledEmail } from "../../services/email";
 import { scheduleRemindersForAppointment, rescheduleRemindersForAppointment, cancelRemindersForAppointment } from "../../services/reminders";
@@ -11,8 +11,6 @@ import {
   rescheduleAppointmentFunction,
   findEmergencySlotFunction,
   lookupPatientByEmailFunction,
-  checkWalkinAvailabilityFunction,
-  bookWalkinFunction,
 } from "./tools";
 import { buildSystemPrompt } from "./prompts";
 import { findAvailableSlots, getAvailableSlotsForDate, findEmergencySlot } from "./availability";
@@ -31,8 +29,6 @@ export interface ChatEngineResult {
     date: string;
     time: string;
     service: string;
-    appointmentType?: string;
-    timePeriod?: string;
   } | null;
 }
 
@@ -102,12 +98,10 @@ export async function processChatMessage(
     rescheduleAppointmentFunction,
     findEmergencySlotFunction,
     lookupPatientByEmailFunction,
-    checkWalkinAvailabilityFunction,
-    bookWalkinFunction,
   ];
 
-  let initialResponse = await chatCompletion({
-
+  let initialResponse = await openai.chat.completions.create({
+    model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
     messages: currentMessages,
     tools: allTools,
     tool_choice: "auto",
@@ -138,8 +132,8 @@ export async function processChatMessage(
         content: JSON.stringify(emergencyResult),
       });
 
-      const emergencyFollowUp = await chatCompletion({
-    
+      const emergencyFollowUp = await openai.chat.completions.create({
+        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -189,8 +183,8 @@ export async function processChatMessage(
         content: availabilityInfo,
       });
 
-      const followUpResponse = await chatCompletion({
-    
+      const followUpResponse = await openai.chat.completions.create({
+        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -250,14 +244,12 @@ export async function processChatMessage(
           referenceNumber: appointment.referenceNumber,
           appointmentId: appointment.id,
           doctorId: appointment.doctorId,
-          doctorName: appointment.doctor?.name || "Walk-in (any available doctor)",
+          doctorName: appointment.doctor.name,
           patientName: appointment.patient.name,
           service: appointment.service,
           date: appointmentDate.toISOString().split("T")[0],
           time: `${String(appointmentDate.getHours()).padStart(2, "0")}:${String(appointmentDate.getMinutes()).padStart(2, "0")}`,
           status: appointment.status,
-          appointmentType: appointment.appointmentType,
-          timePeriod: appointment.timePeriod,
         });
       }
 
@@ -268,8 +260,8 @@ export async function processChatMessage(
         content: lookupResult,
       });
 
-      const lookupFollowUp = await chatCompletion({
-    
+      const lookupFollowUp = await openai.chat.completions.create({
+        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -324,7 +316,7 @@ export async function processChatMessage(
           status: "cancelled",
         });
 
-        if (appointment.googleEventId && appointment.doctorId) {
+        if (appointment.googleEventId) {
           try {
             const doctor = await storage.getDoctorById(appointment.doctorId);
             if (doctor?.googleRefreshToken) {
@@ -340,11 +332,11 @@ export async function processChatMessage(
         }
 
         if (appointment.patient.email) {
-          const doctor = appointment.doctorId ? await storage.getDoctorById(appointment.doctorId) : null;
+          const doctor = await storage.getDoctorById(appointment.doctorId);
           sendAppointmentCancelledEmail({
             patientEmail: appointment.patient.email,
             patientName: appointment.patient.name,
-            doctorName: doctor?.name || (appointment.appointmentType === "walk-in" ? "Walk-in" : "Doctor"),
+            doctorName: doctor?.name || "Doctor",
             date: new Date(appointment.date),
             service: appointment.service,
             referenceNumber: refNum,
@@ -369,8 +361,8 @@ export async function processChatMessage(
         content: cancelResult,
       });
 
-      const cancelFollowUp = await chatCompletion({
-    
+      const cancelFollowUp = await openai.chat.completions.create({
+        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
         messages: currentMessages,
       });
 
@@ -420,11 +412,6 @@ export async function processChatMessage(
           success: false,
           error: "Cannot reschedule a cancelled appointment.",
         });
-      } else if (appointment.appointmentType === "walk-in") {
-        rescheduleResult = JSON.stringify({
-          success: false,
-          error: "Walk-in appointments cannot be rescheduled to a specific time. Please cancel this walk-in and book a new appointment instead.",
-        });
       } else {
         const newDateTime = clinicTimeToUTC(rescheduleData.newDate, rescheduleData.newTime, clinicTimezone);
 
@@ -434,9 +421,8 @@ export async function processChatMessage(
             error: "Cannot reschedule to a past date/time.",
           });
         } else {
-          const existingAppointments = appointment.doctorId
-            ? await storage.getAppointmentsByDoctorId(appointment.doctorId)
-            : [];
+          const existingAppointments =
+            await storage.getAppointmentsByDoctorId(appointment.doctorId);
           const duration = appointment.duration || 30;
           const conflicting = existingAppointments.find((apt) => {
             if (apt.id === appointment.id || apt.status === "cancelled")
@@ -460,7 +446,7 @@ export async function processChatMessage(
               date: newDateTime,
             });
 
-            if (appointment.googleEventId && appointment.doctorId) {
+            if (appointment.googleEventId) {
               try {
                 const doctor = await storage.getDoctorById(
                   appointment.doctorId,
@@ -497,7 +483,7 @@ export async function processChatMessage(
             }
 
             if (appointment.patient.email) {
-              const doctor = appointment.doctorId ? await storage.getDoctorById(appointment.doctorId) : null;
+              const doctor = await storage.getDoctorById(appointment.doctorId);
               sendAppointmentRescheduledEmail({
                 patientEmail: appointment.patient.email,
                 patientName: appointment.patient.name,
@@ -532,8 +518,8 @@ export async function processChatMessage(
         content: rescheduleResult,
       });
 
-      const rescheduleFollowUp = await chatCompletion({
-    
+      const rescheduleFollowUp = await openai.chat.completions.create({
+        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
         messages: currentMessages,
       });
 
@@ -585,8 +571,8 @@ export async function processChatMessage(
         content: lookupResult,
       });
 
-      const patientLookupFollowUp = await chatCompletion({
-    
+      const patientLookupFollowUp = await openai.chat.completions.create({
+        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -595,213 +581,6 @@ export async function processChatMessage(
       responseMessage = patientLookupFollowUp.choices[0]?.message;
     } catch (e) {
       console.error("Error looking up patient by email:", e);
-    }
-  }
-
-  if (
-    responseMessage?.tool_calls &&
-    responseMessage.tool_calls.length > 0 &&
-    (responseMessage.tool_calls[0] as any)?.function?.name ===
-      "check_walkin_availability"
-  ) {
-    const walkinCheckToolCall = responseMessage.tool_calls[0] as {
-      id: string;
-      function: { name: string; arguments: string };
-    };
-
-    try {
-      const checkData = JSON.parse(walkinCheckToolCall.function.arguments);
-      const requestedDate = checkData.date;
-
-      if (requestedDate < today) {
-        const result = JSON.stringify({ available: false, error: "Cannot check availability for past dates." });
-        currentMessages.push(responseMessage);
-        currentMessages.push({ role: "tool", tool_call_id: walkinCheckToolCall.id, content: result });
-      } else {
-        const openTime = settings?.openTime || "09:00";
-        const closeTime = settings?.closeTime || "17:00";
-        const [openH] = openTime.split(":").map(Number);
-        const [closeH] = closeTime.split(":").map(Number);
-
-        const periods: { name: string; available: boolean; description: string }[] = [];
-
-        if (openH < 12) {
-          periods.push({ name: "morning", available: true, description: `${openTime.slice(0, 5)} - 12:00` });
-        }
-        if (openH < 16 && closeH > 12) {
-          periods.push({ name: "afternoon", available: true, description: `12:00 - ${Math.min(closeH, 16)}:00` });
-        }
-        if (closeH > 16) {
-          periods.push({ name: "evening", available: true, description: `16:00 - ${closeTime.slice(0, 5)}` });
-        }
-
-        if (requestedDate === today) {
-          const currentHour = clinicNow.hours;
-          for (const period of periods) {
-            const periodEndHour = period.name === "morning" ? 12 : period.name === "afternoon" ? 16 : closeH;
-            if (currentHour >= periodEndHour) {
-              period.available = false;
-            }
-          }
-        }
-
-        const dayOfWeek = new Date(requestedDate + "T12:00:00").getDay();
-        const workingDays = settings?.workingDays || [1, 2, 3, 4, 5, 6];
-        if (!workingDays.includes(dayOfWeek)) {
-          for (const period of periods) {
-            period.available = false;
-          }
-        }
-
-        const result = JSON.stringify({
-          date: requestedDate,
-          periods: periods.filter(p => p.available),
-          clinicOpen: openTime.slice(0, 5),
-          clinicClose: closeTime.slice(0, 5),
-          isWorkingDay: workingDays.includes(dayOfWeek),
-        });
-
-        currentMessages.push(responseMessage);
-        currentMessages.push({ role: "tool", tool_call_id: walkinCheckToolCall.id, content: result });
-      }
-
-      const walkinCheckFollowUp = await chatCompletion({
-    
-        messages: currentMessages,
-        tools: allTools,
-        tool_choice: "auto",
-      });
-
-      responseMessage = walkinCheckFollowUp.choices[0]?.message;
-    } catch (e) {
-      console.error("Error checking walk-in availability:", e);
-    }
-  }
-
-  if (
-    responseMessage?.tool_calls &&
-    responseMessage.tool_calls.length > 0 &&
-    (responseMessage.tool_calls[0] as any)?.function?.name ===
-      "book_walkin"
-  ) {
-    const walkinToolCall = responseMessage.tool_calls[0] as {
-      id: string;
-      type: string;
-      function: { name: string; arguments: string };
-    };
-
-    try {
-      const walkinData = JSON.parse(walkinToolCall.function.arguments);
-
-      const invalidNames = ["pending", "unknown", "test", "user", "patient", "name", "n/a", "na", "tbd"];
-      const patientName = (walkinData.patientName || "").trim().toLowerCase();
-      const patientPhone = (walkinData.patientPhone || "").trim();
-
-      if (!walkinData.patientName || patientName.length < 2) {
-        throw new Error("MISSING_INFO: I need your full name to book the walk-in visit. What is your name?");
-      }
-      if (invalidNames.some((n) => patientName.split(/\s+/).includes(n))) {
-        throw new Error("MISSING_INFO: I need your real full name. Could you please tell me your name?");
-      }
-      if (!patientPhone || patientPhone.length < 6) {
-        throw new Error("MISSING_INFO: I need your phone number to book the walk-in visit. What is your phone number?");
-      }
-      if (!walkinData.patientEmail) {
-        throw new Error("MISSING_INFO: I need your email address to send the appointment confirmation. What is your email?");
-      }
-
-      const openTime = settings?.openTime || "09:00";
-      const closeTime = settings?.closeTime || "17:00";
-      const timePeriodMap: Record<string, string> = {
-        morning: openTime.slice(0, 5),
-        afternoon: "12:00",
-        evening: "16:00",
-      };
-      const representativeTime = timePeriodMap[walkinData.timePeriod] || openTime.slice(0, 5);
-      const appointmentDateTime = clinicTimeToUTC(walkinData.date, representativeTime, clinicTimezone);
-
-      let patient = await storage.findOrCreatePatient({
-        name: walkinData.patientName, phone: walkinData.patientPhone,
-        email: walkinData.patientEmail || null, notes: `Walk-in booked via ${source} on ${new Date().toLocaleDateString()}`,
-      });
-
-      const appointment = await storage.createAppointment({
-        patientId: patient.id,
-        doctorId: null,
-        date: appointmentDateTime,
-        duration: settings?.appointmentDuration || 30,
-        status: "scheduled",
-        service: walkinData.service,
-        notes: walkinData.notes || `Walk-in - ${walkinData.timePeriod}`,
-        source,
-        appointmentType: "walk-in",
-        timePeriod: walkinData.timePeriod,
-      });
-
-      bookingResult = {
-        success: true,
-        appointmentId: appointment.id,
-        referenceNumber: appointment.referenceNumber!,
-        patientName: walkinData.patientName,
-        doctorName: "Any available doctor",
-        date: walkinData.date,
-        time: walkinData.timePeriod,
-        service: walkinData.service,
-        appointmentType: "walk-in",
-        timePeriod: walkinData.timePeriod,
-      };
-
-      const patientEmail = walkinData.patientEmail || patient.email;
-      if (patientEmail) {
-        sendAppointmentConfirmationEmail({
-          patientEmail,
-          patientName: walkinData.patientName,
-          doctorName: "Any available doctor (walk-in)",
-          date: appointmentDateTime,
-          service: walkinData.service,
-          duration: settings?.appointmentDuration || 30,
-          referenceNumber: appointment.referenceNumber!,
-        }).catch((e) => console.error("Failed to send walk-in confirmation email:", e));
-      }
-
-      scheduleRemindersForAppointment(appointment.id).catch((e) =>
-        console.error("Failed to schedule walk-in reminders:", e)
-      );
-
-      const confirmationResponse = await chatCompletion({
-    
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...conversationHistory,
-          { role: "user", content: message },
-          responseMessage,
-          {
-            role: "tool",
-            tool_call_id: walkinToolCall.id,
-            content: JSON.stringify({
-              success: true,
-              message: `Walk-in appointment registered! Reference number: ${appointment.referenceNumber}. Come in on ${walkinData.date} during the ${walkinData.timePeriod} (${timePeriodMap[walkinData.timePeriod]} onwards). The first available doctor will see you.`,
-              referenceNumber: appointment.referenceNumber,
-              details: bookingResult,
-            }),
-          },
-        ],
-      });
-
-      fullResponse =
-        confirmationResponse.choices[0]?.message?.content ||
-        (language === "nl"
-          ? `Uw walk-in afspraak is geregistreerd! Referentienummer: ${appointment.referenceNumber}. Kom op ${walkinData.date} in de ${walkinData.timePeriod === "morning" ? "ochtend" : walkinData.timePeriod === "afternoon" ? "middag" : "avond"}.`
-          : `Your walk-in appointment is registered! Reference: ${appointment.referenceNumber}. Come in on ${walkinData.date} during the ${walkinData.timePeriod}. The first available doctor will see you.`);
-    } catch (walkinError: any) {
-      console.error("Walk-in booking error:", walkinError);
-      if (walkinError.message?.startsWith("MISSING_INFO:")) {
-        fullResponse = walkinError.message.replace("MISSING_INFO: ", "");
-      } else {
-        fullResponse = language === "nl"
-          ? "Er is een fout opgetreden bij het registreren van uw walk-in afspraak. Probeer het opnieuw."
-          : "There was an error registering your walk-in appointment. Please try again.";
-      }
     }
   }
 
@@ -997,10 +776,15 @@ export async function processChatMessage(
         }
       }
 
-      let patient = await storage.findOrCreatePatient({
-        name: bookingData.patientName, phone: bookingData.patientPhone,
-        email: bookingData.patientEmail || null, notes: `Booked via ${source} on ${new Date().toLocaleDateString()}`,
-      });
+      let patient = await storage.getPatientByPhone(bookingData.patientPhone);
+      if (!patient) {
+        patient = await storage.createPatient({
+          name: bookingData.patientName,
+          phone: bookingData.patientPhone,
+          email: bookingData.patientEmail || null,
+          notes: `Booked via ${source} on ${new Date().toLocaleDateString()}`,
+        });
+      }
 
       const appointment = await storage.createAppointment({
         patientId: patient.id,
@@ -1066,8 +850,8 @@ export async function processChatMessage(
         console.error("Failed to schedule reminders:", e)
       );
 
-      const confirmationResponse = await chatCompletion({
-    
+      const confirmationResponse = await openai.chat.completions.create({
+        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
           ...conversationHistory,

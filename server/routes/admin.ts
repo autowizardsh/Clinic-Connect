@@ -315,12 +315,12 @@ export function registerAdminRoutes(app: Express) {
         const appt = await storage.getAppointmentById(id);
         if (appt) {
           const patient = await storage.getPatientById(appt.patientId);
-          const doctor = appt.doctorId ? await storage.getDoctorById(appt.doctorId) : null;
-          if (patient?.email) {
+          const doctor = await storage.getDoctorById(appt.doctorId);
+          if (patient?.email && doctor) {
             sendAppointmentCancelledEmail({
               patientEmail: patient.email,
               patientName: patient.name,
-              doctorName: doctor?.name || (appt.appointmentType === "walk-in" ? "Walk-in" : "Doctor"),
+              doctorName: doctor.name,
               date: new Date(appt.date),
               service: appt.service,
               referenceNumber: appt.referenceNumber || "",
