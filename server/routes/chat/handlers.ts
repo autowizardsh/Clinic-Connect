@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { randomUUID } from "crypto";
 import { storage } from "../../storage";
-import { openai } from "../../services/openai";
+import { chatCompletion, getModel } from "../../services/openai";
 import { createCalendarEvent, deleteCalendarEvent } from "../../google-calendar";
 import { sendAppointmentConfirmationEmail, sendAppointmentCancelledEmail, sendAppointmentRescheduledEmail } from "../../services/email";
 import {
@@ -325,8 +325,7 @@ export function registerChatRoutes(app: Express) {
       while (maxIterations > 0) {
         maxIterations--;
 
-        const aiResponse = await openai.chat.completions.create({
-          model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+        const aiResponse = await chatCompletion({
           messages: currentMessages,
           tools: allTools,
           tool_choice: "auto",
@@ -479,7 +478,7 @@ export function registerChatRoutes(app: Express) {
                 }
               }
 
-              const confirmationResponse = await openai.chat.completions.create({ model: process.env.CHAT_AI_MODEL || "gpt-4o-mini", messages: confirmMsgs });
+              const confirmationResponse = await chatCompletion({ messages: confirmMsgs });
               const confirmationContent = confirmationResponse.choices[0]?.message?.content ||
                 (language === "nl" ? `Uw afspraak is geboekt! Afspraak voor ${bookingData.service} met Dr. ${bookingData.doctorName} op ${bookingData.date} om ${bookingData.time}.`
                   : `Your appointment is booked! Appointment for ${bookingData.service} with Dr. ${bookingData.doctorName} on ${bookingData.date} at ${bookingData.time}.`);
@@ -565,7 +564,7 @@ export function registerChatRoutes(app: Express) {
                 }
               }
 
-              const walkinConfirmation = await openai.chat.completions.create({ model: process.env.CHAT_AI_MODEL || "gpt-4o-mini", messages: confirmMsgs });
+              const walkinConfirmation = await chatCompletion({ messages: confirmMsgs });
               const walkinContent = walkinConfirmation.choices[0]?.message?.content ||
                 (language === "nl" ? `Uw walk-in afspraak is geregistreerd! Referentienummer: ${wAppointment.referenceNumber}.`
                   : `Your walk-in appointment is registered! Reference: ${wAppointment.referenceNumber}. Come in on ${walkinData.date} during the ${walkinData.timePeriod}.`);
@@ -696,8 +695,7 @@ export function registerChatRoutes(app: Express) {
         { role: "user", content: message },
       ];
 
-      let initialResponse = await openai.chat.completions.create({
-        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+      let initialResponse = await chatCompletion({
         messages: currentMessages,
         tools: [checkAvailabilityFunctionSimple, bookingFunctionSimple],
         tool_choice: "auto",
@@ -730,8 +728,7 @@ export function registerChatRoutes(app: Express) {
           currentMessages.push(responseMessage);
           currentMessages.push({ role: "tool", tool_call_id: checkToolCall.id, content: availabilityInfo });
           
-          const followUpResponse = await openai.chat.completions.create({
-            model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+          const followUpResponse = await chatCompletion({
             messages: currentMessages,
             tools: [checkAvailabilityFunctionSimple, bookingFunctionSimple],
             tool_choice: "auto",

@@ -153,8 +153,14 @@ shared/               # Shared types and database schema
 - **connect-pg-simple**: Session storage in PostgreSQL
 
 ### AI Services
-- **OpenAI API**: Chat completions, speech-to-text, text-to-speech
-- Environment variables: `AI_INTEGRATIONS_OPENAI_API_KEY`, `AI_INTEGRATIONS_OPENAI_BASE_URL`
+- **OpenAI-compatible API**: Chat completions with automatic fallback support
+- **Primary provider env vars**: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `CHAT_AI_MODEL` (default: gpt-4o-mini)
+  - Falls back to Replit's `AI_INTEGRATIONS_OPENAI_API_KEY` / `AI_INTEGRATIONS_OPENAI_BASE_URL` if not set
+- **Fallback provider env vars** (optional): `FALLBACK_OPENAI_API_KEY`, `FALLBACK_OPENAI_BASE_URL`, `FALLBACK_AI_MODEL`
+  - Auto-activates on rate limit, quota exceeded, or billing errors from primary
+  - Works with any OpenAI-compatible API (Gemini, Groq, Together, OpenRouter, etc.)
+- **Service module**: `server/services/openai.ts` - exports `chatCompletion()` wrapper and `getModel()`
+- Speech-to-text and text-to-speech still use Replit AI integrations client directly
 
 ### Third-Party Integrations
 - **Google Calendar**: Optional sync for doctor schedules (fields exist for OAuth tokens)

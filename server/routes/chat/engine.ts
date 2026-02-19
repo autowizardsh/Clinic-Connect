@@ -1,5 +1,5 @@
 import { storage } from "../../storage";
-import { openai } from "../../services/openai";
+import { chatCompletion, getModel } from "../../services/openai";
 import { createCalendarEvent, deleteCalendarEvent } from "../../google-calendar";
 import { sendAppointmentConfirmationEmail, sendAppointmentCancelledEmail, sendAppointmentRescheduledEmail } from "../../services/email";
 import { scheduleRemindersForAppointment, rescheduleRemindersForAppointment, cancelRemindersForAppointment } from "../../services/reminders";
@@ -106,8 +106,8 @@ export async function processChatMessage(
     bookWalkinFunction,
   ];
 
-  let initialResponse = await openai.chat.completions.create({
-    model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+  let initialResponse = await chatCompletion({
+
     messages: currentMessages,
     tools: allTools,
     tool_choice: "auto",
@@ -138,8 +138,8 @@ export async function processChatMessage(
         content: JSON.stringify(emergencyResult),
       });
 
-      const emergencyFollowUp = await openai.chat.completions.create({
-        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+      const emergencyFollowUp = await chatCompletion({
+    
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -189,8 +189,8 @@ export async function processChatMessage(
         content: availabilityInfo,
       });
 
-      const followUpResponse = await openai.chat.completions.create({
-        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+      const followUpResponse = await chatCompletion({
+    
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -268,8 +268,8 @@ export async function processChatMessage(
         content: lookupResult,
       });
 
-      const lookupFollowUp = await openai.chat.completions.create({
-        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+      const lookupFollowUp = await chatCompletion({
+    
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -369,8 +369,8 @@ export async function processChatMessage(
         content: cancelResult,
       });
 
-      const cancelFollowUp = await openai.chat.completions.create({
-        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+      const cancelFollowUp = await chatCompletion({
+    
         messages: currentMessages,
       });
 
@@ -532,8 +532,8 @@ export async function processChatMessage(
         content: rescheduleResult,
       });
 
-      const rescheduleFollowUp = await openai.chat.completions.create({
-        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+      const rescheduleFollowUp = await chatCompletion({
+    
         messages: currentMessages,
       });
 
@@ -585,8 +585,8 @@ export async function processChatMessage(
         content: lookupResult,
       });
 
-      const patientLookupFollowUp = await openai.chat.completions.create({
-        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+      const patientLookupFollowUp = await chatCompletion({
+    
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -665,8 +665,8 @@ export async function processChatMessage(
         currentMessages.push({ role: "tool", tool_call_id: walkinCheckToolCall.id, content: result });
       }
 
-      const walkinCheckFollowUp = await openai.chat.completions.create({
-        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+      const walkinCheckFollowUp = await chatCompletion({
+    
         messages: currentMessages,
         tools: allTools,
         tool_choice: "auto",
@@ -768,8 +768,8 @@ export async function processChatMessage(
         console.error("Failed to schedule walk-in reminders:", e)
       );
 
-      const confirmationResponse = await openai.chat.completions.create({
-        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+      const confirmationResponse = await chatCompletion({
+    
         messages: [
           { role: "system", content: systemPrompt },
           ...conversationHistory,
@@ -1066,8 +1066,8 @@ export async function processChatMessage(
         console.error("Failed to schedule reminders:", e)
       );
 
-      const confirmationResponse = await openai.chat.completions.create({
-        model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+      const confirmationResponse = await chatCompletion({
+    
         messages: [
           { role: "system", content: systemPrompt },
           ...conversationHistory,
