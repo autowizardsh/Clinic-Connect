@@ -74,6 +74,9 @@ export async function runToolLoop(
 
     currentMessages.push(assistantMessage);
 
+    let hasQuickRepliesCall = false;
+    let hasDataToolCall = false;
+
     for (const toolCall of assistantMessage.tool_calls) {
       const fnName = (toolCall as any).function?.name;
       const fnArgs = (toolCall as any).function?.arguments || "{}";
@@ -81,16 +84,25 @@ export async function runToolLoop(
       let result: string;
       try {
         const args = JSON.parse(fnArgs);
-        const handled = await handleToolCall(fnName, args, ctx);
 
-        if (handled.type === "quick_replies") {
-          quickReplies = handled.quickReplies;
+        if (fnName === "suggest_quick_replies") {
+          hasQuickRepliesCall = true;
+          const handled = await handleToolCall(fnName, args, ctx);
+          if (handled.type === "quick_replies") {
+            quickReplies = handled.quickReplies;
+          }
           result = JSON.stringify({ acknowledged: true });
-        } else if (handled.type === "booking") {
-          bookingResult = handled.booking;
-          result = handled.result;
         } else {
-          result = handled.result;
+          hasDataToolCall = true;
+          const handled = await handleToolCall(fnName, args, ctx);
+          if (handled.type === "booking") {
+            bookingResult = handled.booking;
+            result = handled.result;
+          } else if (handled.type === "result") {
+            result = handled.result;
+          } else {
+            result = JSON.stringify({ acknowledged: true });
+          }
         }
       } catch (err: any) {
         console.error(`Tool call error (${fnName}):`, err);
@@ -102,6 +114,22 @@ export async function runToolLoop(
         tool_call_id: toolCall.id,
         content: result,
       });
+    }
+
+    if (hasQuickRepliesCall && !hasDataToolCall) {
+      if (!finalResponse) {
+        const followUp = await openai.chat.completions.create({
+          model: process.env.CHAT_AI_MODEL || "gpt-4o-mini",
+          messages: currentMessages,
+          tools: allChatTools,
+          tool_choice: "none",
+        });
+        const followUpContent = followUp.choices[0]?.message?.content;
+        if (followUpContent) {
+          finalResponse = followUpContent;
+        }
+      }
+      break;
     }
   }
 
