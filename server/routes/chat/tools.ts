@@ -26,7 +26,7 @@ export const bookingFunction = {
   function: {
     name: "book_appointment",
     description:
-      "Book a dental appointment ONLY after collecting ALL required information from the patient. DO NOT call this function until you have explicitly asked for and received: 1) patient's REAL full name (first and last), 2) patient's REAL phone number, 3) preferred service, 4) preferred date and time. NEVER use placeholder values like 'pending' or 'unknown'. If any information is missing, ask for it first instead of calling this function.",
+      "Book a dental appointment ONLY after collecting ALL required information from the patient. DO NOT call this function until you have explicitly asked for and received: 1) patient's REAL full name (first and last), 2) patient's REAL phone number, 3) patient's REAL email address, 4) preferred service, 5) preferred date and time. NEVER use placeholder values like 'pending' or 'unknown'. If any information is missing, ask for it first instead of calling this function.",
     parameters: {
       type: "object",
       properties: {
@@ -159,7 +159,7 @@ export const findEmergencySlotFunction = {
   function: {
     name: "find_emergency_slot",
     description:
-      "Find the nearest available emergency appointment slot for TODAY. Searches across ALL doctors to find the soonest available time. Use this when a patient needs an urgent or emergency appointment. After getting the result, proceed to collect patient details and book using book_appointment.",
+      "Find the nearest available emergency appointment slot for TODAY. Searches across ALL doctors to find the soonest available time. Use this when a patient needs an urgent or emergency appointment.",
     parameters: {
       type: "object",
       properties: {},
@@ -186,41 +186,49 @@ export const lookupPatientByEmailFunction = {
   },
 };
 
-export const checkAvailabilityFunctionSimple = {
+export const suggestQuickRepliesFunction = {
   type: "function" as const,
   function: {
-    name: "check_availability",
-    description: "Check if a doctor is available on a specific date. ALWAYS call this before telling a patient about availability.",
+    name: "suggest_quick_replies",
+    description: "Call this AFTER composing your text response to suggest clickable quick-reply buttons for the patient. Choose the appropriate type based on what you just asked the patient. Only call this when buttons would be helpful - not for free-text answers like names, phone numbers, or emails.",
     parameters: {
       type: "object",
       properties: {
-        doctorId: { type: "number", description: "ID of the doctor to check" },
-        date: { type: "string", description: "Date in YYYY-MM-DD format" },
+        type: {
+          type: "string",
+          enum: ["main_menu", "services", "doctors", "dates", "time_slots", "yes_no", "confirm_cancel", "new_returning", "post_booking", "post_cancel", "custom"],
+          description: "Type of quick replies: main_menu (initial options), services (available services), doctors (available dentists), dates (upcoming dates), time_slots (available times from check_availability result), yes_no (simple confirmation), confirm_cancel (cancel confirmation), new_returning (new vs returning patient), post_booking (after booking complete), post_cancel (after cancel/reschedule), custom (provide custom buttons)",
+        },
+        timeSlots: {
+          type: "array",
+          items: { type: "string" },
+          description: "Only for type=time_slots: list of available time slots like ['09:00', '10:30', '14:00']",
+        },
+        custom: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              label: { type: "string", description: "Button label shown to user" },
+              value: { type: "string", description: "Value sent when clicked" },
+            },
+            required: ["label", "value"],
+          },
+          description: "Only for type=custom: array of custom button objects",
+        },
       },
-      required: ["doctorId", "date"],
+      required: ["type"],
     },
   },
 };
 
-export const bookingFunctionSimple = {
-  type: "function" as const,
-  function: {
-    name: "book_appointment",
-    description: "Book a dental appointment for a patient.",
-    parameters: {
-      type: "object",
-      properties: {
-        patientName: { type: "string" },
-        patientPhone: { type: "string" },
-        patientEmail: { type: "string" },
-        service: { type: "string" },
-        doctorId: { type: "number" },
-        doctorName: { type: "string" },
-        date: { type: "string", description: "YYYY-MM-DD format" },
-        time: { type: "string", description: "HH:MM format" },
-        notes: { type: "string" },
-      },
-      required: ["patientName", "patientPhone", "patientEmail", "service", "doctorId", "date", "time"],
-    },
-  },
-};
+export const allChatTools = [
+  checkAvailabilityFunction,
+  bookingFunction,
+  lookupAppointmentFunction,
+  cancelAppointmentFunction,
+  rescheduleAppointmentFunction,
+  findEmergencySlotFunction,
+  lookupPatientByEmailFunction,
+  suggestQuickRepliesFunction,
+];

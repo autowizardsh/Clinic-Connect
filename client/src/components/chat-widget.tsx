@@ -92,7 +92,7 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
       const data = await response.json();
       setSessionId(data.sessionId);
       if (data.welcomeMessage) {
-        const welcomeQuickReplies: QuickReply[] = language === "nl"
+        const welcomeQuickReplies: QuickReply[] = data.quickReplies || (language === "nl"
           ? [
               { label: "Afspraak maken", value: "Ik wil een afspraak maken" },
               { label: "Spoedafspraak", value: "Ik heb een spoedgeval en heb zo snel mogelijk een afspraak nodig" },
@@ -106,7 +106,7 @@ export function ChatWidget({ embedded = false, sessionId: propSessionId, initial
               { label: "Reschedule appointment", value: "I want to reschedule my appointment" },
               { label: "Cancel appointment", value: "I want to cancel my appointment" },
               { label: "Other question", value: "I have another question" },
-            ];
+            ]);
         setMessages([
           {
             id: "welcome",
