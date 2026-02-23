@@ -13,7 +13,7 @@ import {
 } from "./tools";
 import { buildSystemPrompt } from "./prompts";
 import { findAvailableSlots, getAvailableSlotsForDate } from "./availability";
-import { parseButtonHint, buildQuickReplies } from "./quickReplies";
+import { getQuickReplies } from "./quickReplies";
 import { getNowInTimezone, clinicTimeToUTC, isClinicTimePast, getTomorrowInTimezone, getDayAfterTomorrowInTimezone } from "../../utils/timezone";
 
 export interface ChatEngineResult {
@@ -108,7 +108,8 @@ export async function processChatMessage(
   let responseMessage = initialResponse.choices[0]?.message;
   let fullResponse = "";
   let bookingResult: ChatEngineResult["booking"] = null;
-  let parsedBtnType = "none";
+  let lastToolCall: string | undefined;
+  let toolResultSuccess = false;
 
   if (
     responseMessage?.tool_calls &&
@@ -156,6 +157,8 @@ export async function processChatMessage(
       });
 
       responseMessage = followUpResponse.choices[0]?.message;
+      lastToolCall = "check_availability";
+      toolResultSuccess = true;
     } catch (e) {
       console.error("Error checking availability:", e);
     }
@@ -233,6 +236,8 @@ export async function processChatMessage(
       });
 
       responseMessage = lookupFollowUp.choices[0]?.message;
+      lastToolCall = "lookup_appointment";
+      toolResultSuccess = lookupResult.includes('"found":true');
     } catch (e) {
       console.error("Error looking up appointment:", e);
     }
@@ -332,6 +337,8 @@ export async function processChatMessage(
       });
 
       responseMessage = cancelFollowUp.choices[0]?.message;
+      lastToolCall = "cancel_appointment";
+      toolResultSuccess = cancelResult.includes('"success":true');
     } catch (e) {
       console.error("Error cancelling appointment:", e);
     }
@@ -489,6 +496,8 @@ export async function processChatMessage(
       });
 
       responseMessage = rescheduleFollowUp.choices[0]?.message;
+      lastToolCall = "reschedule_appointment";
+      toolResultSuccess = rescheduleResult.includes('"success":true');
     } catch (e) {
       console.error("Error rescheduling appointment:", e);
     }
@@ -544,6 +553,7 @@ export async function processChatMessage(
       });
 
       responseMessage = patientLookupFollowUp.choices[0]?.message;
+      lastToolCall = "lookup_patient_by_email";
     } catch (e) {
       console.error("Error looking up patient by email:", e);
     }
@@ -840,9 +850,9 @@ export async function processChatMessage(
         (language === "nl"
           ? `Uw afspraak is geboekt! Afspraak voor ${bookingData.service} met Dr. ${bookingData.doctorName} op ${bookingData.date} om ${bookingData.time}.`
           : `Your appointment is booked! Appointment for ${bookingData.service} with Dr. ${bookingData.doctorName} on ${bookingData.date} at ${bookingData.time}.`);
-      const confirmParsed = parseButtonHint(rawConfirmation);
-      fullResponse = confirmParsed.cleanResponse;
-      parsedBtnType = confirmParsed.buttonType;
+      fullResponse = rawConfirmation;
+      lastToolCall = "book_appointment";
+      toolResultSuccess = true;
     } catch (bookingError: any) {
       console.error("Booking error:", bookingError);
 
@@ -876,10 +886,7 @@ export async function processChatMessage(
   }
 
   if (!fullResponse) {
-    const rawContent = responseMessage?.content || "";
-    const parsed = parseButtonHint(rawContent);
-    fullResponse = parsed.cleanResponse;
-    parsedBtnType = parsed.buttonType;
+    fullResponse = responseMessage?.content || "";
   }
 
   if (fullResponse) {
@@ -892,7 +899,13 @@ export async function processChatMessage(
 
   let quickReplies: { label: string; value: string }[] = [];
   try {
-    quickReplies = await buildQuickReplies(parsedBtnType, language, fullResponse);
+    quickReplies = await getQuickReplies({
+      lastToolCall,
+      toolResultSuccess,
+      userMessage: message,
+      aiResponse: fullResponse,
+      language,
+    });
   } catch (qrError) {
     console.error("Error determining quick replies:", qrError);
   }

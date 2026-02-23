@@ -16,7 +16,7 @@ import {
 } from "./tools";
 import { buildSystemPrompt } from "./prompts";
 import { findAvailableSlots, getAvailableSlotsForDate } from "./availability";
-import { parseButtonHint, buildQuickReplies } from "./quickReplies";
+import { getQuickReplies } from "./quickReplies";
 import { getNowInTimezone, clinicTimeToUTC, isClinicTimePast, getTomorrowInTimezone, getDayAfterTomorrowInTimezone } from "../../utils/timezone";
 
 export function registerChatRoutes(app: Express) {
@@ -156,7 +156,8 @@ export function registerChatRoutes(app: Express) {
       let responseMessage = initialResponse.choices[0]?.message;
       let fullResponse = "";
       let bookingResult = null;
-      let detectedButtonType = "none";
+      let lastToolCall: string | undefined;
+      let toolResultSuccess = false;
 
       if (
         responseMessage?.tool_calls &&
@@ -201,6 +202,8 @@ export function registerChatRoutes(app: Express) {
           });
           
           responseMessage = followUpResponse.choices[0]?.message;
+          lastToolCall = "check_availability";
+          toolResultSuccess = true;
         } catch (e) {
           console.error("Error checking availability:", e);
         }
@@ -255,6 +258,7 @@ export function registerChatRoutes(app: Express) {
           });
 
           responseMessage = patientLookupFollowUp.choices[0]?.message;
+          lastToolCall = "lookup_patient_by_email";
         } catch (e) {
           console.error("Error looking up patient by email:", e);
         }
@@ -316,6 +320,8 @@ export function registerChatRoutes(app: Express) {
           });
           
           responseMessage = lookupFollowUp.choices[0]?.message;
+          lastToolCall = "lookup_appointment";
+          toolResultSuccess = lookupResult.includes('"found":true');
         } catch (e) {
           console.error("Error looking up appointment:", e);
         }
@@ -395,6 +401,8 @@ export function registerChatRoutes(app: Express) {
           });
           
           responseMessage = cancelFollowUp.choices[0]?.message;
+          lastToolCall = "cancel_appointment";
+          toolResultSuccess = cancelResult.includes('"success":true');
         } catch (e) {
           console.error("Error cancelling appointment:", e);
         }
@@ -513,6 +521,8 @@ export function registerChatRoutes(app: Express) {
           });
           
           responseMessage = rescheduleFollowUp.choices[0]?.message;
+          lastToolCall = "reschedule_appointment";
+          toolResultSuccess = rescheduleResult.includes('"success":true');
         } catch (e) {
           console.error("Error rescheduling appointment:", e);
         }
@@ -760,14 +770,13 @@ export function registerChatRoutes(app: Express) {
               ],
             });
 
-            const rawConfirmation =
+            const confirmationContent =
               confirmationResponse.choices[0]?.message?.content ||
               (language === "nl"
                 ? `Uw afspraak is geboekt! Afspraak voor ${bookingData.service} met Dr. ${bookingData.doctorName} op ${bookingData.date} om ${bookingData.time}.`
                 : `Your appointment is booked! Appointment for ${bookingData.service} with Dr. ${bookingData.doctorName} on ${bookingData.date} at ${bookingData.time}.`);
-            
-            const { cleanResponse: confirmationContent, buttonType: confirmBtnType } = parseButtonHint(rawConfirmation);
-            detectedButtonType = confirmBtnType;
+            lastToolCall = "book_appointment";
+            toolResultSuccess = true;
             
             const chunkSize = 3;
             for (let i = 0; i < confirmationContent.length; i += chunkSize) {
@@ -831,10 +840,8 @@ export function registerChatRoutes(app: Express) {
           }
         }
       } else {
-        const rawContent = responseMessage?.content || "";
-        if (rawContent) {
-          const { cleanResponse: content, buttonType: plainBtnType } = parseButtonHint(rawContent);
-          detectedButtonType = plainBtnType;
+        const content = responseMessage?.content || "";
+        if (content) {
           const chunkSize = 3;
           for (let i = 0; i < content.length; i += chunkSize) {
             const chunk = content.slice(i, i + chunkSize);
@@ -856,7 +863,13 @@ export function registerChatRoutes(app: Express) {
       }
 
       try {
-        const quickReplies = await buildQuickReplies(detectedButtonType, language, fullResponse);
+        const quickReplies = await getQuickReplies({
+          lastToolCall,
+          toolResultSuccess,
+          userMessage: message,
+          aiResponse: fullResponse,
+          language,
+        });
         if (quickReplies.length > 0) {
           res.write(`data: ${JSON.stringify({ quickReplies })}\n\n`);
         }
@@ -1096,12 +1109,8 @@ export function registerChatRoutes(app: Express) {
           }
         }
       } else {
-        const rawContent = responseMessage?.content || "";
-        const { cleanResponse } = parseButtonHint(rawContent);
-        fullResponse = cleanResponse;
+        fullResponse = responseMessage?.content || "";
       }
-
-      const { buttonType: simpleBtnType } = parseButtonHint(responseMessage?.content || fullResponse);
 
       if (fullResponse) {
         await storage.createChatMessage({
@@ -1111,7 +1120,13 @@ export function registerChatRoutes(app: Express) {
         });
       }
 
-      const quickReplies = await buildQuickReplies(simpleBtnType, language, fullResponse);
+      const quickReplies = await getQuickReplies({
+        lastToolCall: bookingResult ? "book_appointment" : undefined,
+        toolResultSuccess: !!bookingResult,
+        userMessage: message,
+        aiResponse: fullResponse,
+        language,
+      });
 
       res.json({
         response: fullResponse,
