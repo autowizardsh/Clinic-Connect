@@ -1,29 +1,154 @@
-import { openai } from "../../services/openai";
 import { storage } from "../../storage";
 import { getNowInTimezone } from "../../utils/timezone";
 
-const CLASSIFY_PROMPT = `You are a button classifier for a dental clinic chatbot. Analyze the assistant's last response and return JSON with the button type to show.
+const BTN_PATTERN = /\n?\[BTN:([a-z_]+)\]\s*$/;
 
-TYPES:
-- "main_menu" — greeting, welcome, or after completing an action and asking what else to help with
-- "doctors" — asking which doctor/dentist the patient prefers
-- "services" — asking what treatment/service type
-- "time_slots" — listing specific available times (e.g. 9:00, 10:30, 14:00)
-- "dates" — asking which day/date the patient wants to come in
-- "confirm_booking" — asking patient to confirm booking details (yes/no)
-- "confirm_cancel" — asking patient to confirm cancellation (yes/no)
-- "confirm_reschedule" — asking patient to confirm rescheduling (yes/no)
-- "new_returning" — asking if patient is new or returning/existing
-- "post_complete" — booking/cancellation/rescheduling just completed successfully
-- "none" — asking for free text input (name, phone, email, reference number, date of birth, address) or any open-ended question that needs typed input
+export function parseButtonHint(fullResponse: string): { cleanResponse: string; buttonType: string } {
+  const match = fullResponse.match(BTN_PATTERN);
+  if (match) {
+    return {
+      cleanResponse: fullResponse.replace(BTN_PATTERN, "").trim(),
+      buttonType: match[1],
+    };
+  }
+  const fallbackType = classifyByPattern(fullResponse);
+  return { cleanResponse: fullResponse, buttonType: fallbackType };
+}
 
-Return ONLY: {"type":"<one_of_the_types_above>"}`;
+function classifyByPattern(response: string): string {
+  const lower = response.toLowerCase();
+  const lastQuestion = extractLastQuestion(response).toLowerCase();
 
-export async function determineQuickReplies(
-  message: string,
-  aiResponse: string,
-  conversationHistory: { role: string; content: string }[],
+  const has = (phrases: string[]) => phrases.some(p => lower.includes(p));
+  const lastQHas = (phrases: string[]) => phrases.some(p => lastQuestion.includes(p));
+
+  const isBookingComplete = has([
+    "has been booked", "successfully booked", "appointment is confirmed",
+    "is booked", "appointment confirmed", "booking confirmed",
+    "successfully scheduled", "has been scheduled",
+    "is geboekt", "is bevestigd", "succesvol geboekt", "afspraak bevestigd",
+  ]) && has(["reference", "apt-", "referentie"]);
+  if (isBookingComplete) return "post_complete";
+
+  const isCancelComplete = has([
+    "has been cancelled", "successfully cancelled", "appointment cancelled",
+    "been canceled", "successfully canceled",
+    "is geannuleerd", "succesvol geannuleerd",
+  ]);
+  if (isCancelComplete) return "post_complete";
+
+  const isRescheduleComplete = has([
+    "has been rescheduled", "successfully rescheduled",
+    "is verzet", "succesvol verzet", "is verplaatst",
+  ]);
+  if (isRescheduleComplete) return "post_complete";
+
+  const isAskingNewOrReturning =
+    (has(["new patient", "nieuwe pati"]) && has(["returning", "existing", "terugkerende", "bestaande"])) ||
+    (has(["first time", "eerste keer"]) && has(["been here before", "visited", "eerder geweest"]));
+  if (isAskingNewOrReturning) return "new_returning";
+
+  const isAskingContactInfo = lastQHas([
+    "your name", "full name", "first and last name",
+    "phone number", "your number", "contact number", "mobile",
+    "reference number", "referentienummer", "booking reference",
+    "email address", "your email", "e-mail",
+    "uw naam", "telefoonnummer", "uw e-mail",
+  ]);
+  if (isAskingContactInfo) return "none";
+
+  const isConfirmCancel = has([
+    "cancel this appointment", "want to cancel", "confirm the cancellation",
+    "sure you want to cancel", "shall i cancel", "should i cancel",
+    "want me to cancel", "proceed with cancellation",
+    "wilt u annuleren", "zal ik annuleren",
+  ]);
+  if (isConfirmCancel) return "confirm_cancel";
+
+  const isConfirmReschedule = has([
+    "reschedule to", "shall i reschedule", "confirm the reschedule",
+    "should i reschedule", "want me to reschedule", "move your appointment",
+    "move it to", "change it to",
+    "verzetten naar", "zal ik verzetten",
+  ]);
+  if (isConfirmReschedule) return "confirm_reschedule";
+
+  const isConfirmBooking = has([
+    "shall i book", "shall i go ahead", "should i book",
+    "would you like me to book", "would you like me to confirm",
+    "want me to book", "ready to book", "shall i proceed",
+    "confirm this", "confirm the booking", "confirm the appointment",
+    "go ahead and book", "proceed with booking",
+    "everything look correct", "look good", "sound good",
+    "zal ik boeken", "wilt u bevestigen", "klopt dit",
+  ]);
+  if (isConfirmBooking) return "confirm_booking";
+
+  const timeSlots = extractTimeSlots(response);
+  if (timeSlots.length > 0) return "time_slots";
+
+  const mentionsDoctors = has(["dr. ", "doctor", "dentist", "tandarts"]);
+  const isAskingDoctor = mentionsDoctors && lastQHas([
+    "which doctor", "which dentist", "which one",
+    "prefer a doctor", "prefer a dentist",
+    "choose a doctor", "choose a dentist",
+    "have a preference", "do you have a preference",
+    "doctor preference", "dentist preference",
+    "like to see", "want to see",
+    "particular doctor", "specific doctor",
+    "recommend one", "choose one for you",
+    "who would you", "select a doctor",
+    "welke tandarts", "voorkeur",
+  ]);
+  if (isAskingDoctor) return "doctors";
+
+  const isAskingService = lastQHas([
+    "which service", "what service", "type of service", "what treatment",
+    "which treatment", "type of treatment", "type of appointment",
+    "what kind of", "what type of", "looking for", "what brings you",
+    "reason for your visit", "what do you need",
+    "welke dienst", "welke behandeling", "wat voor",
+  ]);
+  if (isAskingService) return "services";
+
+  const isAskingDate = lastQHas([
+    "when would you", "which day", "what day", "which date", "what date",
+    "preferred date", "when do you", "come in", "like to visit",
+    "when are you", "schedule for", "when works",
+    "like to come", "want to come", "preferred day",
+    "your preferred", "date you", "day would",
+    "wanneer wilt", "welke dag", "welke datum",
+  ]);
+  if (isAskingDate) return "dates";
+
+  const isGreeting = has([
+    "how can i help", "how may i help", "what can i help",
+    "how can i assist", "what would you like",
+    "hoe kan ik", "waarmee kan ik",
+    "welcome", "welkom",
+  ]);
+  if (isGreeting) return "main_menu";
+
+  return "none";
+}
+
+function extractLastQuestion(response: string): string {
+  const sentences = response
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+
+  for (let i = sentences.length - 1; i >= 0; i--) {
+    if (sentences[i].includes("?")) return sentences[i];
+  }
+
+  return sentences.length > 0 ? sentences[sentences.length - 1] : response;
+}
+
+export async function buildQuickReplies(
+  buttonType: string,
   language: string,
+  aiResponse: string,
 ): Promise<{ label: string; value: string }[]> {
   try {
     const settings = await storage.getClinicSettings();
@@ -31,11 +156,21 @@ export async function determineQuickReplies(
     const activeDoctors = doctors.filter(d => d.isActive);
     const services = settings?.services || ["General Checkup", "Teeth Cleaning"];
 
-    const buttonType = await classifyButtonType(aiResponse);
-
     switch (buttonType) {
       case "main_menu":
-        return mainMenuButtons(language);
+        return language === "nl"
+          ? [
+              { label: "Afspraak maken", value: "Ik wil een afspraak maken" },
+              { label: "Afspraak verzetten", value: "Ik wil mijn afspraak verzetten" },
+              { label: "Afspraak annuleren", value: "Ik wil mijn afspraak annuleren" },
+              { label: "Andere vraag", value: "Ik heb een andere vraag" },
+            ]
+          : [
+              { label: "Book an appointment", value: "I would like to book an appointment" },
+              { label: "Reschedule appointment", value: "I want to reschedule my appointment" },
+              { label: "Cancel appointment", value: "I want to cancel my appointment" },
+              { label: "Other question", value: "I have another question" },
+            ];
 
       case "doctors":
         return activeDoctors.map(d => ({
@@ -51,7 +186,7 @@ export async function determineQuickReplies(
 
       case "time_slots": {
         const slots = extractTimeSlots(aiResponse);
-        return slots.length > 0 ? slots.map(t => ({ label: t, value: t })) : [];
+        return slots.map(t => ({ label: t, value: t }));
       }
 
       case "dates":
@@ -117,51 +252,9 @@ export async function determineQuickReplies(
         return [];
     }
   } catch (error) {
-    console.error("Quick reply determination failed:", error);
+    console.error("Error building quick replies:", error);
     return [];
   }
-}
-
-async function classifyButtonType(aiResponse: string): Promise<string> {
-  try {
-    const trimmedResponse = aiResponse.slice(-600);
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: CLASSIFY_PROMPT },
-        { role: "user", content: `Assistant response:\n"${trimmedResponse}"` },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 30,
-      temperature: 0,
-    });
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) return "none";
-
-    const parsed = JSON.parse(content);
-    return parsed.type || "none";
-  } catch (error) {
-    console.error("Button type classification failed:", error);
-    return "none";
-  }
-}
-
-function mainMenuButtons(language: string): { label: string; value: string }[] {
-  return language === "nl"
-    ? [
-        { label: "Afspraak maken", value: "Ik wil een afspraak maken" },
-        { label: "Afspraak verzetten", value: "Ik wil mijn afspraak verzetten" },
-        { label: "Afspraak annuleren", value: "Ik wil mijn afspraak annuleren" },
-        { label: "Andere vraag", value: "Ik heb een andere vraag" },
-      ]
-    : [
-        { label: "Book an appointment", value: "I would like to book an appointment" },
-        { label: "Reschedule appointment", value: "I want to reschedule my appointment" },
-        { label: "Cancel appointment", value: "I want to cancel my appointment" },
-        { label: "Other question", value: "I have another question" },
-      ];
 }
 
 function buildDateButtons(

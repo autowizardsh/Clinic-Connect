@@ -16,7 +16,7 @@ import {
 } from "./tools";
 import { buildSystemPrompt } from "./prompts";
 import { findAvailableSlots, getAvailableSlotsForDate } from "./availability";
-import { determineQuickReplies } from "./quickReplies";
+import { parseButtonHint, buildQuickReplies } from "./quickReplies";
 import { getNowInTimezone, clinicTimeToUTC, isClinicTimePast, getTomorrowInTimezone, getDayAfterTomorrowInTimezone } from "../../utils/timezone";
 
 export function registerChatRoutes(app: Express) {
@@ -156,6 +156,7 @@ export function registerChatRoutes(app: Express) {
       let responseMessage = initialResponse.choices[0]?.message;
       let fullResponse = "";
       let bookingResult = null;
+      let detectedButtonType = "none";
 
       if (
         responseMessage?.tool_calls &&
@@ -759,11 +760,14 @@ export function registerChatRoutes(app: Express) {
               ],
             });
 
-            const confirmationContent =
+            const rawConfirmation =
               confirmationResponse.choices[0]?.message?.content ||
               (language === "nl"
                 ? `Uw afspraak is geboekt! Afspraak voor ${bookingData.service} met Dr. ${bookingData.doctorName} op ${bookingData.date} om ${bookingData.time}.`
                 : `Your appointment is booked! Appointment for ${bookingData.service} with Dr. ${bookingData.doctorName} on ${bookingData.date} at ${bookingData.time}.`);
+            
+            const { cleanResponse: confirmationContent, buttonType: confirmBtnType } = parseButtonHint(rawConfirmation);
+            detectedButtonType = confirmBtnType;
             
             const chunkSize = 3;
             for (let i = 0; i < confirmationContent.length; i += chunkSize) {
@@ -827,8 +831,10 @@ export function registerChatRoutes(app: Express) {
           }
         }
       } else {
-        const content = responseMessage?.content || "";
-        if (content) {
+        const rawContent = responseMessage?.content || "";
+        if (rawContent) {
+          const { cleanResponse: content, buttonType: plainBtnType } = parseButtonHint(rawContent);
+          detectedButtonType = plainBtnType;
           const chunkSize = 3;
           for (let i = 0; i < content.length; i += chunkSize) {
             const chunk = content.slice(i, i + chunkSize);
@@ -850,12 +856,7 @@ export function registerChatRoutes(app: Express) {
       }
 
       try {
-        const quickReplies = await determineQuickReplies(
-          message,
-          fullResponse,
-          conversationHistory,
-          language,
-        );
+        const quickReplies = await buildQuickReplies(detectedButtonType, language, fullResponse);
         if (quickReplies.length > 0) {
           res.write(`data: ${JSON.stringify({ quickReplies })}\n\n`);
         }
@@ -1095,8 +1096,12 @@ export function registerChatRoutes(app: Express) {
           }
         }
       } else {
-        fullResponse = responseMessage?.content || "";
+        const rawContent = responseMessage?.content || "";
+        const { cleanResponse } = parseButtonHint(rawContent);
+        fullResponse = cleanResponse;
       }
+
+      const { buttonType: simpleBtnType } = parseButtonHint(responseMessage?.content || fullResponse);
 
       if (fullResponse) {
         await storage.createChatMessage({
@@ -1106,11 +1111,7 @@ export function registerChatRoutes(app: Express) {
         });
       }
 
-      const simpleConversationHistory = previousMessages.slice(-25).map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
-      const quickReplies = await determineQuickReplies(message, fullResponse, simpleConversationHistory, language);
+      const quickReplies = await buildQuickReplies(simpleBtnType, language, fullResponse);
 
       res.json({
         response: fullResponse,

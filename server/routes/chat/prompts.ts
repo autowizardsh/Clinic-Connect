@@ -111,6 +111,21 @@ STYLE RULES:
 - No emojis, no formatting (no **bold** or *italic*)
 - Keep it short - max 2-3 sentences per response
 - Be helpful and professional but warm
-- The chat interface shows clickable option buttons automatically. You do NOT need to list options in your text. Just ask the question naturally (e.g. "Which service would you like?" or "Which dentist do you prefer?") and the system will show the right buttons. Do NOT number or bullet-list options in your text.`;
+- The chat interface shows clickable option buttons automatically. You do NOT need to list options in your text. Just ask the question naturally (e.g. "Which service would you like?" or "Which dentist do you prefer?") and the system will show the right buttons. Do NOT number or bullet-list options in your text.
+
+BUTTON HINTS (MANDATORY):
+At the very end of EVERY response, you MUST add exactly one button tag on a new line. This tag tells the system which buttons to display. Pick the most appropriate one:
+[BTN:main_menu] - greeting, welcome, or asking what the patient needs help with
+[BTN:doctors] - asking which doctor/dentist the patient prefers
+[BTN:services] - asking what service or treatment type they want
+[BTN:time_slots] - you just listed available time slots for them to pick
+[BTN:dates] - asking which day/date they'd like to come in
+[BTN:confirm_booking] - asking them to confirm booking details (yes/no)
+[BTN:confirm_cancel] - asking them to confirm a cancellation (yes/no)
+[BTN:confirm_reschedule] - asking them to confirm rescheduling (yes/no)
+[BTN:new_returning] - asking if they are a new or returning patient
+[BTN:post_complete] - a booking, cancellation, or rescheduling was just completed successfully
+[BTN:none] - asking for free-text input like name, phone, email, reference number, or any open question
+NEVER forget the button tag. Always put it as the very last line of your response.`;
 }
 

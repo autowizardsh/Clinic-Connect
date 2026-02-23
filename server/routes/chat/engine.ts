@@ -13,7 +13,7 @@ import {
 } from "./tools";
 import { buildSystemPrompt } from "./prompts";
 import { findAvailableSlots, getAvailableSlotsForDate } from "./availability";
-import { determineQuickReplies } from "./quickReplies";
+import { parseButtonHint, buildQuickReplies } from "./quickReplies";
 import { getNowInTimezone, clinicTimeToUTC, isClinicTimePast, getTomorrowInTimezone, getDayAfterTomorrowInTimezone } from "../../utils/timezone";
 
 export interface ChatEngineResult {
@@ -108,6 +108,7 @@ export async function processChatMessage(
   let responseMessage = initialResponse.choices[0]?.message;
   let fullResponse = "";
   let bookingResult: ChatEngineResult["booking"] = null;
+  let parsedBtnType = "none";
 
   if (
     responseMessage?.tool_calls &&
@@ -834,11 +835,14 @@ export async function processChatMessage(
         ],
       });
 
-      fullResponse =
+      const rawConfirmation =
         confirmationResponse.choices[0]?.message?.content ||
         (language === "nl"
           ? `Uw afspraak is geboekt! Afspraak voor ${bookingData.service} met Dr. ${bookingData.doctorName} op ${bookingData.date} om ${bookingData.time}.`
           : `Your appointment is booked! Appointment for ${bookingData.service} with Dr. ${bookingData.doctorName} on ${bookingData.date} at ${bookingData.time}.`);
+      const confirmParsed = parseButtonHint(rawConfirmation);
+      fullResponse = confirmParsed.cleanResponse;
+      parsedBtnType = confirmParsed.buttonType;
     } catch (bookingError: any) {
       console.error("Booking error:", bookingError);
 
@@ -872,7 +876,10 @@ export async function processChatMessage(
   }
 
   if (!fullResponse) {
-    fullResponse = responseMessage?.content || "";
+    const rawContent = responseMessage?.content || "";
+    const parsed = parseButtonHint(rawContent);
+    fullResponse = parsed.cleanResponse;
+    parsedBtnType = parsed.buttonType;
   }
 
   if (fullResponse) {
@@ -885,12 +892,7 @@ export async function processChatMessage(
 
   let quickReplies: { label: string; value: string }[] = [];
   try {
-    quickReplies = await determineQuickReplies(
-      message,
-      fullResponse,
-      conversationHistory,
-      language,
-    );
+    quickReplies = await buildQuickReplies(parsedBtnType, language, fullResponse);
   } catch (qrError) {
     console.error("Error determining quick replies:", qrError);
   }
