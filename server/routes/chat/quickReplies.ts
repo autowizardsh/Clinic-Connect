@@ -153,7 +153,7 @@ export async function getQuickReplies(
     return buildDateButtons(settings, language);
   }
 
-  if (mentionsAny(lower, ["how can i help", "how may i help", "what can i help", "waarmee kan ik", "hoe kan ik"])) {
+  if (mentionsAny(lower, ["how can i help", "how may i help", "how can i assist", "how may i assist", "what can i help", "what can i do for you", "waarmee kan ik", "hoe kan ik"])) {
     return nl
       ? [
           { label: "Afspraak maken", value: "Ik wil een afspraak maken" },
